@@ -63,21 +63,157 @@ export default async function RequestDetailPage({
   const suppliers = suppliersData ?? [];
   const activities = activityData ?? [];
 
-  const previewEntries = await Promise.all(
-    items.map(async (item) => {
-      if (!item.image_url) return [item.id, ""] as const;
+  const itemIds = items.map((item) => item.id);
 
-      if (/^https?:\/\//i.test(item.image_url)) {
-        return [item.id, item.image_url] as const;
-      }
+let referenceImageRows: any[] = [];
+let supplierImages: any[] = [];
 
-      const { data } = await supabase.storage
-        .from(STORAGE_BUCKET)
-        .createSignedUrl(item.image_url, 3600);
+if (itemIds.length) {
+  const [
+    referenceImagesResult,
+    supplierImagesResult,
+  ] = await Promise.all([
+    supabase
+      .from("sourcing_request_item_images")
+      .select(
+        "id, request_item_id, object_path, sort_order"
+      )
+      .in("request_item_id", itemIds)
+      .order("sort_order", {
+        ascending: true,
+      }),
 
-      return [item.id, data?.signedUrl ?? ""] as const;
-    })
-  );
+    supabase
+      .from("sourcing_supplier_images")
+      .select(
+        "id, request_item_id, object_path"
+      )
+      .eq("request_id", id)
+      .eq("ready", true),
+  ]);
+
+  referenceImageRows =
+    referenceImagesResult.data ?? [];
+
+  supplierImages =
+    supplierImagesResult.data ?? [];
+}
+
+// Collect every private Storage path first.
+// Then generate all signed URLs in one batch request.
+const storagePathSet = new Set<string>();
+
+for (const item of items) {
+  if (
+    item.image_url &&
+    !/^https?:\/\//i.test(item.image_url)
+  ) {
+    storagePathSet.add(item.image_url);
+  }
+}
+
+for (const image of referenceImageRows) {
+  if (image.object_path) {
+    storagePathSet.add(image.object_path);
+  }
+}
+
+for (const image of supplierImages) {
+  if (image.object_path) {
+    storagePathSet.add(image.object_path);
+  }
+}
+
+const storagePaths = Array.from(storagePathSet);
+
+const signedUrlByPath: Record<string, string> =
+  {};
+
+if (storagePaths.length) {
+  const { data: signedUrls } =
+    await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrls(
+        storagePaths,
+        3600
+      );
+
+  storagePaths.forEach((path, index) => {
+    signedUrlByPath[path] =
+      signedUrls?.[index]?.signedUrl ?? "";
+  });
+}
+
+// Legacy image_url previews
+const previewByItemId = Object.fromEntries(
+  items.map((item) => {
+    if (!item.image_url) {
+      return [item.id, ""];
+    }
+
+    if (
+      /^https?:\/\//i.test(item.image_url)
+    ) {
+      return [
+        item.id,
+        item.image_url,
+      ];
+    }
+
+    return [
+      item.id,
+      signedUrlByPath[item.image_url] ??
+        "",
+    ];
+  })
+) as Record<string, string>;
+
+// New Nexo reference-image gallery
+const referenceImagesByItemId: Record<
+  string,
+  {
+    id: string;
+    path: string;
+    previewUrl: string;
+  }[]
+> = {};
+
+for (const item of items) {
+  referenceImagesByItemId[item.id] = [];
+}
+
+for (const image of referenceImageRows) {
+  if (
+    !referenceImagesByItemId[
+      image.request_item_id
+    ]
+  ) {
+    referenceImagesByItemId[
+      image.request_item_id
+    ] = [];
+  }
+
+  referenceImagesByItemId[
+    image.request_item_id
+  ].push({
+    id: image.id,
+    path: image.object_path,
+    previewUrl:
+      signedUrlByPath[
+        image.object_path
+      ] ?? "",
+  });
+}
+
+// Supplier image previews
+const supplierImagePreviews =
+  supplierImages.map((image) => ({
+    ...image,
+    url:
+      signedUrlByPath[
+        image.object_path
+      ] ?? "",
+  }));
 
   const previewByItemId = Object.fromEntries(previewEntries) as Record<string, string>;
   const referenceImageRows = items.length
