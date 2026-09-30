@@ -29,21 +29,21 @@ export function NexoUnreadMarker({
     const marker =
       markerRef.current;
 
-    const detailsElement =
+    const found =
       marker?.closest("details");
 
     if (
-      !(
-        detailsElement instanceof
-        HTMLDetailsElement
-      )
+      !(found instanceof HTMLDetailsElement)
     ) {
       return;
     }
 
+    const details: HTMLDetailsElement =
+      found;
+
     async function markSeen() {
       if (
-        !detailsElement.open ||
+        !details.open ||
         !unread ||
         !changedAt ||
         busy.current
@@ -76,25 +76,25 @@ export function NexoUnreadMarker({
         }
       } catch {
         // Keep the yellow dot if marking
-        // the item as seen fails.
+        // as seen fails.
       } finally {
         busy.current = false;
       }
     }
 
     function handleToggle() {
-      if (detailsElement.open) {
+      if (details.open) {
         void markSeen();
       }
     }
 
-    detailsElement.addEventListener(
+    details.addEventListener(
       "toggle",
       handleToggle
     );
 
     return () => {
-      detailsElement.removeEventListener(
+      details.removeEventListener(
         "toggle",
         handleToggle
       );
