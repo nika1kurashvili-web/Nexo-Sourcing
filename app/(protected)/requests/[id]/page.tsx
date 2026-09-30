@@ -1,5 +1,6 @@
 
-Loading older messages…
+import Link from "next/link";
+import { notFound } from "next/navigation";
 const previewByItemId = Object.fromEntries(
   items.map((item) => {
     if (!item.image_url) {
