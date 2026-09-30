@@ -10,6 +10,7 @@ import {
 } from "@/app/actions";
 
 import { requireSourcingAccess } from "@/lib/auth";
+
 import {
   activityLabel,
   requestStatusLabel,
@@ -20,6 +21,7 @@ import {
 
 import { RequestBadge } from "@/components/RequestBadge";
 import { ReferenceImagesField } from "@/components/ReferenceImagesField";
+import { NexoUnreadMarker } from "@/components/NexoUnreadMarker";
 import { RequestItemForm } from "@/components/RequestItemForm";
 import { SupplierShareLinks } from "@/components/SupplierShareLinks";
 import { DeadlineField } from "@/components/DeadlineField";
@@ -756,6 +758,27 @@ export default async function RequestDetailPage({
           >
             <summary className="item-summary">
               <span className="item-summary-title">
+                <NexoUnreadMarker
+                  requestId={request.id}
+                  itemId={item.id}
+                  initialUnread={Boolean(
+                    item.supplier_changed_at &&
+                      (
+                        !item.nexo_seen_at ||
+                        Date.parse(
+                          item.supplier_changed_at
+                        ) >
+                          Date.parse(
+                            item.nexo_seen_at
+                          )
+                      )
+                  )}
+                  changedAt={
+                    item.supplier_changed_at ??
+                    null
+                  }
+                />
+
                 <span className="item-number">
                   ITEM-
                   {String(
@@ -1228,9 +1251,7 @@ export default async function RequestDetailPage({
                             }
                             className="small muted"
                           >
-                            Image
-                            preview
-                            unavailable.
+                            Image preview unavailable.
                           </span>
                         )
                       )}
