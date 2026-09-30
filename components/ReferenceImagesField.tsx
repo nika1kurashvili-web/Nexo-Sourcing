@@ -50,11 +50,11 @@ export function ReferenceImagesField({
   );
 
   const [images, setImages] = useState<ImageState[]>(() =>
-  (initialImages ?? []).map((image) => ({
-    ...image,
-    existing: true,
-  }))
-);
+    (initialImages ?? []).map((image) => ({
+      ...image,
+      existing: true,
+    }))
+  );
 
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -66,11 +66,11 @@ export function ReferenceImagesField({
     setLegacyPreview(legacyPreviewUrl ?? "");
 
     setImages(
-  (initialImages ?? []).map((image) => ({
-    ...image,
-    existing: true,
-  }))
-);
+      (initialImages ?? []).map((image) => ({
+        ...image,
+        existing: true,
+      }))
+    );
   }, [legacyPath, legacyPreviewUrl, initialImages]);
 
   const totalImages =
@@ -110,9 +110,7 @@ export function ReferenceImagesField({
       }
 
       if (file.size > MAX_FILE_SIZE) {
-        setMessage(
-          `${file.name} is larger than 10 MB.`
-        );
+        setMessage(`${file.name} is larger than 10 MB.`);
         return;
       }
     }
@@ -142,8 +140,7 @@ export function ReferenceImagesField({
       }
 
       const folder =
-        requestItemId ??
-        `temp-${crypto.randomUUID()}`;
+        requestItemId ?? `temp-${crypto.randomUUID()}`;
 
       const uploadedImages: ImageState[] = [];
 
@@ -153,8 +150,7 @@ export function ReferenceImagesField({
         const cleanFilename =
           file.name
             .replace(/[^a-zA-Z0-9._-]/g, "_")
-            .slice(-100) ||
-          `image.${extension}`;
+            .slice(-100) || `image.${extension}`;
 
         const objectPath =
           `requests/${requestId}/${folder}/` +
@@ -295,6 +291,8 @@ export function ReferenceImagesField({
                   className="upload-preview"
                   src={legacyPreview}
                   alt="Product reference"
+                  loading="lazy"
+                  decoding="async"
                 />
               </a>
             ) : (
@@ -335,6 +333,8 @@ export function ReferenceImagesField({
                   className="upload-preview"
                   src={image.previewUrl}
                   alt="Product reference"
+                  loading="lazy"
+                  decoding="async"
                 />
               </a>
             ) : (
@@ -388,8 +388,7 @@ export function ReferenceImagesField({
       </div>
 
       <div className="small muted">
-        Images only · Maximum 10 MB each · Maximum 5
-        images per product
+        Images only · Maximum 10 MB each · Maximum 5 images per product
       </div>
 
       {message && (
