@@ -19,7 +19,7 @@ h1{font-size:26px;margin:0 0 6px}h2{font-size:18px;margin:0}.muted{color:var(--m
 .stat,.card,.item-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
 .stat-value{font-size:30px;font-weight:800;margin-top:8px}.stack{display:grid;gap:14px}
 .two-col{display:grid;grid-template-columns:340px minmax(0,1fr);gap:18px;align-items:start}
-.form-grid{display:grid;gap:12px}.form-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}
+.form-grid{display:grid;gap:12px}.form-grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.form-grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.form-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
 label{display:grid;gap:6px;font-size:13px;font-weight:700}
 input,select,textarea{width:100%;border:1px solid #d8dde2;border-radius:9px;background:#fff;padding:10px 11px;outline:none}
 textarea{resize:vertical;min-height:82px}input:focus,select:focus,textarea:focus{border-color:#7a8796;box-shadow:0 0 0 3px rgba(17,24,39,.07)}
@@ -39,5 +39,14 @@ hr{border:0;border-top:1px solid var(--line);margin:18px 0}
  .shell{grid-template-columns:1fr}.sidebar{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);padding:14px}
  .brand{margin-bottom:12px}.nav{grid-template-columns:repeat(4,minmax(0,1fr));overflow-x:auto}.nav a{text-align:center;padding:9px 7px;font-size:12px}
  .sidebar-bottom{position:static;margin-top:12px}.main{padding:18px 12px}.grid-4{grid-template-columns:1fr 1fr;gap:10px}
- .form-grid.two,.form-grid.three{grid-template-columns:1fr}.page-head{flex-direction:column}
+ .form-grid.two,.form-grid.three,.form-grid.four{grid-template-columns:1fr}.page-head{flex-direction:column}
 }
+
+
+.section-label{font-size:13px;font-weight:800;margin-bottom:8px}
+.upload-box{display:grid;gap:10px;padding:12px;border:1px dashed #cbd2d9;border-radius:10px;background:#fafbfc}
+.upload-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.upload-button{position:relative;overflow:hidden}
+.visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+.upload-preview-link{display:inline-block;max-width:220px}
+.upload-preview{display:block;width:100%;max-width:220px;max-height:180px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#fff}

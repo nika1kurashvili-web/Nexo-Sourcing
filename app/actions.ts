@@ -141,6 +141,10 @@ export async function createRequestItemAction(formData: FormData) {
       client_price: numberOrNull(formData.get("client_price")),
       moq: numberOrNull(formData.get("moq")),
       lead_time_days: numberOrNull(formData.get("lead_time_days")),
+      box_length_cm: numberOrNull(formData.get("box_length_cm")),
+      box_width_cm: numberOrNull(formData.get("box_width_cm")),
+      box_height_cm: numberOrNull(formData.get("box_height_cm")),
+      weight_kg: numberOrNull(formData.get("weight_kg")),
       supplier_comment: clean(formData.get("supplier_comment")),
       internal_comment: clean(formData.get("internal_comment"))
     })
@@ -176,6 +180,10 @@ export async function updateRequestItemAction(formData: FormData) {
       client_price: numberOrNull(formData.get("client_price")),
       moq: numberOrNull(formData.get("moq")),
       lead_time_days: numberOrNull(formData.get("lead_time_days")),
+      box_length_cm: numberOrNull(formData.get("box_length_cm")),
+      box_width_cm: numberOrNull(formData.get("box_width_cm")),
+      box_height_cm: numberOrNull(formData.get("box_height_cm")),
+      weight_kg: numberOrNull(formData.get("weight_kg")),
       supplier_comment: clean(formData.get("supplier_comment")),
       internal_comment: clean(formData.get("internal_comment")),
       client_comment: clean(formData.get("client_comment"))
