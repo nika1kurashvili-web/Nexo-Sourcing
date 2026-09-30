@@ -173,58 +173,58 @@ export default async function RequestDetailPage({
             </label>
           </div>
 
-              <div className="form-grid three">
-                <label>
-                  China Price
-                  <input
-                    name="china_price"
-                    type="number"
-                    step="0.01"
-                  />
-                </label>
-                <label>
-                  Currency
-                  <select
-                    name="currency" defaultValue="USD"
-                  >
-                    <option value="USD">USD</option>
-                    <option value="CNY">CNY</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GEL">GEL</option>
-                  </select>
-                </label>
-                <label>
-                  Client Price
-                  <input
-                    name="client_price"
-                    type="number"
-                    step="0.01"
-                  />
-                </label>
-              </div>
+          <div className="form-grid three">
+            <label>
+              China Price
+              <input
+                name="china_price"
+                type="number"
+                step="0.01"
+              />
+            </label>
+            <label>
+              Currency
+              <select
+                name="currency" defaultValue="USD"
+              >
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="EUR">EUR</option>
+                <option value="GEL">GEL</option>
+              </select>
+            </label>
+            <label>
+              Client Price
+              <input
+                name="client_price"
+                type="number"
+                step="0.01"
+              />
+            </label>
+          </div>
 
-              <div className="form-grid two">
-                <label>
-                  MOQ
-                  <input
-                    name="moq"
-                    type="number"
-                    step="0.01"
-                  />
-                </label>
-                <label>
-                  წარმოების ვადა (დღე)
-                  <input
-                    name="lead_time_days"
-                    type="number"
-                    min="0"
-                  />
-                </label>
-              </div>
+          <div className="form-grid two">
+            <label>
+              MOQ
+              <input
+                name="moq"
+                type="number"
+                step="0.01"
+              />
+            </label>
+            <label>
+              წარმოების ვადა (დღე)
+              <input
+                name="lead_time_days"
+                type="number"
+                min="0"
+              />
+            </label>
+          </div>
 
-<label>Supplier comment<textarea name="supplier_comment" /></label>
-<label>Internal comment<textarea name="internal_comment" /></label>
-<label>Client comment<textarea name="client_comment" /></label>
+          <label>Supplier comment<textarea name="supplier_comment" /></label>
+          <label>Internal comment<textarea name="internal_comment" /></label>
+          <label>Client comment<textarea name="client_comment" /></label>
           <div>
             <div className="section-label">ყუთის მონაცემები</div>
             <div className="form-grid four">
