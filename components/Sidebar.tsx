@@ -13,7 +13,7 @@ export function Sidebar({ email }: { email: string }) {
       </nav>
       <div className="sidebar-bottom">
         <div className="user-email">{email}</div>
-        <form action={logoutAction}><button className="btn secondary full" type="submit">გამოსვლა</button></form>
+        <form action={logoutAction}><button className="btn secondary full" type="submit">Sign Out</button></form>
       </div>
     </aside>
   );

@@ -9,25 +9,25 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <div className="page-head"><div><h1>Companies</h1><div className="muted">კლიენტი კომპანიები</div></div></div>
-      {params.error && <div className="notice">კომპანიის დამატება ვერ მოხერხდა.</div>}
+      <div className="page-head"><div><h1>Companies</h1><div className="muted">Client companies</div></div></div>
+      {params.error && <div className="notice">Unable to add company.</div>}
       <div className="two-col">
         <div className="card">
-          <h2>ახალი კომპანია</h2><hr />
+          <h2>New Company</h2><hr />
           <form action={createCompanyAction} className="form-grid">
-            <label>კომპანიის სახელი *<input name="name" required /></label>
-            <label>საკონტაქტო პირი<input name="contact_name" /></label>
-            <label>ტელეფონი<input name="phone" /></label>
+            <label>Company Name *<input name="name" required /></label>
+            <label>Contact Person<input name="contact_name" /></label>
+            <label>Phone<input name="phone" /></label>
             <label>Email<input name="email" type="email" /></label>
-            <label>შენიშვნა<textarea name="notes" /></label>
-            <button className="btn" type="submit">დამატება</button>
+            <label>Notes<textarea name="notes" /></label>
+            <button className="btn" type="submit">Add</button>
           </form>
         </div>
         <div className="card">
-          <h2>კომპანიები ({companies.length})</h2><hr />
-          {companies.length === 0 ? <div className="empty">ჯერ კომპანია არ არის დამატებული.</div> : (
+          <h2>Companies ({companies.length})</h2><hr />
+          {companies.length === 0 ? <div className="empty">No companies yet.</div> : (
             <div className="table-wrap"><table>
-              <thead><tr><th>კომპანია</th><th>საკონტაქტო</th><th>ტელეფონი</th><th>Email</th></tr></thead>
+              <thead><tr><th>Company</th><th>Contact</th><th>Phone</th><th>Email</th></tr></thead>
               <tbody>{companies.map((c:any) => <tr key={c.id}>
                 <td><strong>{c.name}</strong></td><td>{c.contact_name ?? "—"}</td><td>{c.phone ?? "—"}</td><td>{c.email ?? "—"}</td>
               </tr>)}</tbody>

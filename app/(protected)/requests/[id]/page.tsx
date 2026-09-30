@@ -7,7 +7,7 @@ import {
   updateRequestStatusAction
 } from "@/app/actions";
 import { requireSourcingAccess } from "@/lib/auth";
-import { requestStatuses, supplierStatuses, supplierStatusLabel } from "@/lib/labels";
+import { activityLabel, requestStatusLabel, requestStatuses, supplierStatuses, supplierStatusLabel } from "@/lib/labels";
 import { RequestBadge } from "@/components/RequestBadge";
 import { ImageUploadField } from "@/components/ImageUploadField";
 
@@ -85,7 +85,7 @@ export default async function RequestDetailPage({
           </div>
           <h1>{request.request_no}</h1>
           <div className="muted">
-            {request.sourcing_companies?.name ?? "კომპანია არ არის მითითებული"}
+            {request.sourcing_companies?.name ?? "No company selected"}
             {request.title ? ` · ${request.title}` : ""}
           </div>
         </div>
@@ -96,7 +96,7 @@ export default async function RequestDetailPage({
         <form action={updateRequestStatusAction} className="form-grid two">
           <input type="hidden" name="id" value={request.id} />
           <label>
-            მოთხოვნის საერთო სტატუსი
+            Request Status
             <select name="status" defaultValue={request.status}>
               {requestStatuses.map(([value, label]) => (
                 <option key={value} value={value}>
@@ -107,7 +107,7 @@ export default async function RequestDetailPage({
           </label>
           <div style={{ alignSelf: "end" }}>
             <button className="btn" type="submit">
-              სტატუსის შენახვა
+              Save Status
             </button>
           </div>
         </form>
@@ -115,14 +115,14 @@ export default async function RequestDetailPage({
         {request.notes && (
           <>
             <hr />
-            <div className="small muted">შენიშვნა</div>
+            <div className="small muted">Notes</div>
             <div>{request.notes}</div>
           </>
         )}
       </div>
 
       <div className="card" style={{ marginBottom: 18 }}>
-        <h2>+ ახალი ნივთი</h2>
+        <h2>+ New Item</h2>
         <hr />
 
         <RequestItemForm key={items.length} action={createRequestItemAction}>
@@ -130,21 +130,21 @@ export default async function RequestDetailPage({
 
           <div className="form-grid three">
             <label>
-              პროდუქტი *
+              Product Name *
               <input name="product_name" required />
             </label>
             <label>
-              რაოდენობა
+              Quantity
               <input name="quantity" type="number" step="0.01" />
             </label>
             <label>
-              ერთეული
+              Unit
               <input name="unit" defaultValue="pcs" />
             </label>
           </div>
 
           <label>
-            სპეციფიკაცია / რა უნდა მოძებნოს ჩინელმა
+            Specifications / Sourcing Requirements
             <textarea name="specifications" />
           </label>
 
@@ -152,7 +152,7 @@ export default async function RequestDetailPage({
             <label>
               Supplier
               <select name="supplier_id" defaultValue="">
-                <option value="">— ჯერ არ არის მიბმული —</option>
+                <option value="">— No supplier selected —</option>
                 {suppliers.map((s: any) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -213,7 +213,7 @@ export default async function RequestDetailPage({
               />
             </label>
             <label>
-              წარმოების ვადა (დღე)
+              Lead Time (days)
               <input
                 name="lead_time_days"
                 type="number"
@@ -222,38 +222,38 @@ export default async function RequestDetailPage({
             </label>
           </div>
 
-          <label>Supplier comment<textarea name="supplier_comment" /></label>
-          <label>Internal comment<textarea name="internal_comment" /></label>
-          <label>Client comment<textarea name="client_comment" /></label>
+          <label>Supplier Comment<textarea name="supplier_comment" /></label>
+          <label>Internal Comment<textarea name="internal_comment" /></label>
+          <label>Client Comment<textarea name="client_comment" /></label>
           <div>
-            <div className="section-label">ყუთის მონაცემები</div>
+            <div className="section-label">Packaging Details</div>
             <div className="form-grid four">
               <label>
-                სიგრძე (cm)
+                Box Length (cm)
                 <input name="box_length_cm" type="number" step="0.01" min="0" />
               </label>
               <label>
-                სიგანე (cm)
+                Box Width (cm)
                 <input name="box_width_cm" type="number" step="0.01" min="0" />
               </label>
               <label>
-                სიმაღლე (cm)
+                Box Height (cm)
                 <input name="box_height_cm" type="number" step="0.01" min="0" />
               </label>
               <label>
-                წონა (kg)
+                Weight (kg)
                 <input name="weight_kg" type="number" step="0.001" min="0" />
               </label>
             </div>
           </div>
 
           <div>
-            <div className="section-label">პროდუქტის ფოტო</div>
+            <div className="section-label">Product Image</div>
             <ImageUploadField requestId={request.id} />
           </div>
 
           <button className="btn" type="submit">
-            ნივთის დამატება
+            Add Item
           </button>
         </RequestItemForm>
       </div>
@@ -261,23 +261,37 @@ export default async function RequestDetailPage({
       <div className="stack">
         {items.length === 0 && (
           <div className="card empty">
-            ამ მოთხოვნაში ჯერ ნივთი არ არის დამატებული.
+            No items in this request yet.
           </div>
         )}
 
         {items.map((item) => (
-          <div className="item-card" key={item.id}>
-            <div className="item-head">
-              <div>
+          <details className="item-card item-accordion" key={item.id}>
+            <summary className="item-summary">
+              <span className="item-summary-title">
                 <span className="item-number">
                   ITEM-{String(item.item_no).padStart(2, "0")}
                 </span>
                 <span className="item-title">{item.product_name}</span>
-              </div>
+              </span>
+              <span className="small muted item-summary-supplier">
+                Supplier: {item.sourcing_suppliers?.name ?? "Not assigned"}
+              </span>
               <span className="badge">
                 {supplierStatusLabel(item.supplier_status)}
               </span>
-            </div>
+              {item.china_price != null && (
+                <span className="small">China Price: {item.currency ?? "USD"} {Number(item.china_price).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              )}
+              {item.quantity != null && (
+                <span className="small">Quantity: {item.quantity} {item.unit ?? "pcs"}</span>
+              )}
+              <svg className="item-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </summary>
+
+            <div className="item-content">
 
             <RequestItemForm action={updateRequestItemAction}>
               <input type="hidden" name="id" value={item.id} />
@@ -285,7 +299,7 @@ export default async function RequestDetailPage({
 
               <div className="form-grid three">
                 <label>
-                  პროდუქტი
+                  Product Name
                   <input
                     name="product_name"
                     defaultValue={item.product_name}
@@ -293,7 +307,7 @@ export default async function RequestDetailPage({
                   />
                 </label>
                 <label>
-                  რაოდენობა
+                  Quantity
                   <input
                     name="quantity"
                     type="number"
@@ -302,13 +316,13 @@ export default async function RequestDetailPage({
                   />
                 </label>
                 <label>
-                  ერთეული
+                  Unit
                   <input name="unit" defaultValue={item.unit ?? "pcs"} />
                 </label>
               </div>
 
               <label>
-                სპეციფიკაცია
+                Specifications
                 <textarea
                   name="specifications"
                   defaultValue={item.specifications ?? ""}
@@ -322,7 +336,7 @@ export default async function RequestDetailPage({
                     name="supplier_id"
                     defaultValue={item.supplier_id ?? ""}
                   >
-                    <option value="">— არ არის მიბმული —</option>
+                    <option value="">— No supplier selected —</option>
                     {suppliers.map((s: any) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
@@ -390,7 +404,7 @@ export default async function RequestDetailPage({
                   />
                 </label>
                 <label>
-                  წარმოების ვადა (დღე)
+                  Lead Time (days)
                   <input
                     name="lead_time_days"
                     type="number"
@@ -401,10 +415,10 @@ export default async function RequestDetailPage({
               </div>
 
               <div>
-                <div className="section-label">ყუთის მონაცემები</div>
+                <div className="section-label">Packaging Details</div>
                 <div className="form-grid four">
                   <label>
-                    სიგრძე (cm)
+                    Box Length (cm)
                     <input
                       name="box_length_cm"
                       type="number"
@@ -414,7 +428,7 @@ export default async function RequestDetailPage({
                     />
                   </label>
                   <label>
-                    სიგანე (cm)
+                    Box Width (cm)
                     <input
                       name="box_width_cm"
                       type="number"
@@ -424,7 +438,7 @@ export default async function RequestDetailPage({
                     />
                   </label>
                   <label>
-                    სიმაღლე (cm)
+                    Box Height (cm)
                     <input
                       name="box_height_cm"
                       type="number"
@@ -434,7 +448,7 @@ export default async function RequestDetailPage({
                     />
                   </label>
                   <label>
-                    წონა (kg)
+                    Weight (kg)
                     <input
                       name="weight_kg"
                       type="number"
@@ -447,7 +461,7 @@ export default async function RequestDetailPage({
               </div>
 
               <label>
-                Supplier comment
+                Supplier Comment
                 <textarea
                   name="supplier_comment"
                   defaultValue={item.supplier_comment ?? ""}
@@ -455,7 +469,7 @@ export default async function RequestDetailPage({
               </label>
 
               <label>
-                Internal comment
+                Internal Comment
                 <textarea
                   name="internal_comment"
                   defaultValue={item.internal_comment ?? ""}
@@ -463,7 +477,7 @@ export default async function RequestDetailPage({
               </label>
 
               <label>
-                Client comment
+                Client Comment
                 <textarea
                   name="client_comment"
                   defaultValue={item.client_comment ?? ""}
@@ -471,7 +485,7 @@ export default async function RequestDetailPage({
               </label>
 
               <div>
-                <div className="section-label">პროდუქტის ფოტო</div>
+                <div className="section-label">Product Image</div>
                 <ImageUploadField
                   requestId={request.id}
                   requestItemId={item.id}
@@ -481,7 +495,7 @@ export default async function RequestDetailPage({
               </div>
 
               <button className="btn" type="submit">
-                შენახვა
+                Save
               </button>
             </RequestItemForm>
 
@@ -489,27 +503,28 @@ export default async function RequestDetailPage({
               <input type="hidden" name="id" value={item.id} />
               <input type="hidden" name="request_id" value={request.id} />
               <button className="btn danger" type="submit">
-                ნივთის წაშლა
+                Delete Item
               </button>
             </form>
-          </div>
+            </div>
+          </details>
         ))}
       </div>
 
       <div className="card" style={{ marginTop: 18 }}>
-        <h2>ბოლო ცვლილებები</h2>
+        <h2>Recent Activity</h2>
         <hr />
 
         {activities.length === 0 ? (
-          <div className="empty">ისტორია ჯერ ცარიელია.</div>
+          <div className="empty">No activity yet.</div>
         ) : (
           <div className="stack">
             {activities.map((a: any) => (
               <div key={a.id}>
-                <strong>{a.action}</strong>
-                {a.details ? ` · ${a.details}` : ""}
+                <strong>{activityLabel(a.action)}</strong>
+                {a.details ? ` · ${a.action === "request_status_changed" ? requestStatusLabel(a.details) : a.details}` : ""}
                 <div className="small muted">
-                  {new Date(a.created_at).toLocaleString("ka-GE")}
+                  {new Date(a.created_at).toLocaleString("en-GB")}
                 </div>
               </div>
             ))}

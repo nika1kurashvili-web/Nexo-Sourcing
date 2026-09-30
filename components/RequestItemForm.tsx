@@ -27,7 +27,7 @@ export function RequestItemForm({ action, children }: {
           const result = await action(data);
           if (result?.error) setError(result.error);
         } catch {
-          setError("შენახვა ვერ მოხერხდა. სცადეთ ხელახლა.");
+          setError("Unable to save. Please try again.");
         } finally {
           busy.current = false;
           setSaving(false);
@@ -36,8 +36,8 @@ export function RequestItemForm({ action, children }: {
         <fieldset disabled={saving} className="form-grid" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           {children}
         </fieldset>
-        {uploading && <p role="status">დაელოდეთ ფოტოს ატვირთვას.</p>}
-        {saving && <p role="status">ინახება...</p>}
+        {uploading && <p role="status">Please wait for the image upload to finish.</p>}
+        {saving && <p role="status">Saving...</p>}
         {error && <p role="alert" className="notice">{error}</p>}
       </form>
     </UploadContext.Provider>

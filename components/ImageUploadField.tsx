@@ -41,12 +41,12 @@ export function ImageUploadField({
     setMessage("");
 
     if (!file.type.startsWith("image/")) {
-      setMessage("აირჩიე ფოტოს ფაილი.");
+      setMessage("Please select an image file.");
       return;
     }
 
     if (file.size > MAX_FILE_SIZE) {
-      setMessage("ფოტო მაქსიმუმ 10 MB უნდა იყოს.");
+      setMessage("The image must be 10 MB or smaller.");
       return;
     }
 
@@ -73,7 +73,7 @@ export function ImageUploadField({
         });
 
       if (uploadError) {
-        setMessage(`ატვირთვა ვერ მოხერხდა: ${uploadError.message}`);
+        setMessage(`Upload failed: ${uploadError.message}`);
         return;
       }
 
@@ -83,15 +83,15 @@ export function ImageUploadField({
 
       if (signedError) {
         setPreviewUrl("");
-        setMessage(`ფოტო აიტვირთა, მაგრამ preview ვერ შეიქმნა: ${signedError.message}`);
+        setMessage(`Image uploaded, but the preview could not be created: ${signedError.message}`);
       } else {
         setPreviewUrl(signedData.signedUrl);
-        setMessage("ფოტო ატვირთულია. დააჭირე „შენახვა“-ს.");
+        setMessage("Image uploaded. Save the item to keep this change.");
       }
 
       setPath(objectPath);
     } catch (error) {
-      setMessage(`ატვირთვა ვერ მოხერხდა: ${error instanceof Error ? error.message : "Network error. Please retry."}`);
+      setMessage(`Upload failed: ${error instanceof Error ? error.message : "Network error. Please retry."}`);
     } finally {
       setUploading(false);
       setFormUploading(false);
@@ -101,7 +101,7 @@ export function ImageUploadField({
   return (
     <div className="upload-box">
       <input type="hidden" name={name} value={path} readOnly />
-      {path && !previewUrl && <div role="status" className="small muted">ფოტოს preview მიუწვდომელია. განაახლეთ გვერდი ან გადაამოწმეთ Storage წვდომა.</div>}
+      {path && !previewUrl && <div role="status" className="small muted">Image preview unavailable. Refresh the page or check your image access.</div>}
 
       {previewUrl ? (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="upload-preview-link">
@@ -111,7 +111,7 @@ export function ImageUploadField({
 
       <div className="upload-controls">
         <label className="btn secondary upload-button">
-          {uploading ? "იტვირთება..." : path ? "ფოტოს შეცვლა" : "ფოტოს ატვირთვა"}
+          {uploading ? "Uploading..." : path ? "Replace Image" : "Upload Image"}
           <input
             className="visually-hidden"
             type="file"
@@ -133,15 +133,15 @@ export function ImageUploadField({
             onClick={() => {
               setPath("");
               setPreviewUrl("");
-              setMessage("ფოტო მოხსნილია. ცვლილების დასაფიქსირებლად დააჭირე „შენახვა“-ს.");
+              setMessage("Image removed. Save the item to keep this change.");
             }}
           >
-            ფოტოს მოხსნა
+            Remove Image
           </button>
         ) : null}
       </div>
 
-      <div className="small muted">მხოლოდ ფოტოები · მაქსიმუმ 10 MB</div>
+      <div className="small muted">Images only · Maximum 10 MB</div>
       {message ? <div role="status" aria-live="polite" className="small muted">{message}</div> : null}
     </div>
   );

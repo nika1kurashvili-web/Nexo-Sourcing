@@ -11,19 +11,19 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     if (access) redirect("/dashboard");
   }
   const message = params.error === "no-access"
-    ? "ამ მომხმარებელს Sourcing-ზე წვდომა არ აქვს."
-    : params.error ? "Email ან პაროლი არასწორია." : null;
+    ? "This account does not have access to Nexo Sourcing."
+    : params.error ? "Incorrect email or password." : null;
 
   return (
     <main className="login-wrap">
       <div className="login-card">
         <h1>Nexo Sourcing</h1>
-        <p className="muted">მოთხოვნებისა და ჩინეთის პასუხების მართვა</p>
+        <p className="muted">Manage sourcing requests and supplier responses</p>
         {message && <div className="notice">{message}</div>}
         <form action={loginAction} className="form-grid">
           <label>Email<input name="email" type="email" required autoComplete="email" /></label>
           <label>Password<input name="password" type="password" required autoComplete="current-password" /></label>
-          <button className="btn full" type="submit">შესვლა</button>
+          <button className="btn full" type="submit">Sign In</button>
         </form>
       </div>
     </main>

@@ -25,23 +25,23 @@ export default async function DashboardPage() {
   return (
     <>
       <div className="page-head">
-        <div><h1>Dashboard</h1><div className="muted">ყველა აქტიური მოთხოვნა ერთ ადგილას</div></div>
-        <Link href="/requests" className="btn">+ ახალი მოთხოვნა</Link>
+        <div><h1>Dashboard</h1><div className="muted">All active requests in one place</div></div>
+        <Link href="/requests" className="btn">+ New Request</Link>
       </div>
 
       <div className="grid-4">
-        <div className="stat"><div className="muted small">აქტიური მოთხოვნები</div><div className="stat-value">{activeResult.count ?? 0}</div></div>
-        <div className="stat"><div className="muted small">ჩინეთის პასუხს ელოდება</div><div className="stat-value">{waitingResult.count ?? 0}</div></div>
-        <div className="stat"><div className="muted small">პასუხი მიღებულია</div><div className="stat-value">{answeredResult.count ?? 0}</div></div>
-        <div className="stat"><div className="muted small">კლიენტის პასუხს ელოდება</div><div className="stat-value">{quoteResult.count ?? 0}</div></div>
+        <div className="stat"><div className="muted small">Active Requests</div><div className="stat-value">{activeResult.count ?? 0}</div></div>
+        <div className="stat"><div className="muted small">Waiting for Supplier</div><div className="stat-value">{waitingResult.count ?? 0}</div></div>
+        <div className="stat"><div className="muted small">Response Received</div><div className="stat-value">{answeredResult.count ?? 0}</div></div>
+        <div className="stat"><div className="muted small">Waiting for Client</div><div className="stat-value">{quoteResult.count ?? 0}</div></div>
       </div>
 
       <div className="card">
-        <div className="page-head"><div><h2>ბოლო მოთხოვნები</h2></div></div>
-        {requests.length === 0 ? <div className="empty">ჯერ არცერთი მოთხოვნა არ არის.</div> : (
+        <div className="page-head"><div><h2>Recent Requests</h2></div></div>
+        {requests.length === 0 ? <div className="empty">No requests yet.</div> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Request</th><th>კომპანია</th><th>დასახელება</th><th>სტატუსი</th><th>განახლდა</th></tr></thead>
+              <thead><tr><th>Request</th><th>Company</th><th>Title</th><th>Status</th><th>Updated</th></tr></thead>
               <tbody>
                 {requests.map((r) => (
                   <tr key={r.id}>
@@ -49,7 +49,7 @@ export default async function DashboardPage() {
                     <td>{r.sourcing_companies?.name ?? "—"}</td>
                     <td>{r.title ?? "—"}</td>
                     <td><RequestBadge status={r.status} /></td>
-                    <td>{new Date(r.updated_at).toLocaleDateString("ka-GE")}</td>
+                    <td>{new Date(r.updated_at).toLocaleDateString("en-GB")}</td>
                   </tr>
                 ))}
               </tbody>
