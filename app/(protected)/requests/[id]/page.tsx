@@ -273,14 +273,7 @@ const referenceImagesByItemId = Object.fromEntries(
     assignedSuppliers.set(item.supplier_id, supplier);
   }
   // RLS still authorizes all admin reads. Missing portal migration must not break
-  // the existing request workflow.
-  const { data: supplierImages } = await supabase.from("sourcing_supplier_images")
-    .select("id,request_item_id,object_path").eq("request_id", id).eq("ready", true);
-  const supplierImagePreviews = await Promise.all((supplierImages ?? []).map(async image => {
-    const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(image.object_path, 3600);
-    return { ...image, url: data?.signedUrl };
-  }));
-
+  
   return (
     <>
       <div className="page-head">
