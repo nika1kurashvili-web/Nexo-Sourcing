@@ -65,3 +65,4 @@ export async function readSupplierPortal(token: string) {
   createdAt: request.data.created_at as string,
   deadlineAt: request.data.deadline_at as string | null,
 };
+}
