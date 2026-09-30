@@ -4,6 +4,7 @@ import {
   createRequestItemAction,
   deleteRequestItemAction,
   updateRequestItemAction,
+  updateRequestDeadlineAction,
   updateRequestStatusAction
 } from "@/app/actions";
 import { requireSourcingAccess } from "@/lib/auth";
@@ -13,6 +14,9 @@ import { ImageUploadField } from "@/components/ImageUploadField";
 
 import { RequestItemForm } from "@/components/RequestItemForm";
 import { SupplierShareLinks } from "@/components/SupplierShareLinks";
+import { DeadlineField } from "@/components/DeadlineField";
+import { RequestDeadline } from "@/components/RequestDeadline";
+import { formatRequestDate } from "@/lib/request-dates";
 
 const STORAGE_BUCKET = "sourcing-files";
 
@@ -104,6 +108,11 @@ export default async function RequestDetailPage({
             {request.sourcing_companies?.name ?? "No company selected"}
             {request.title ? ` · ${request.title}` : ""}
           </div>
+          <div className="request-dates">
+            <div>Created: <time dateTime={request.created_at}>{formatRequestDate(request.created_at, true)}</time></div>
+            <div>Deadline: <RequestDeadline value={request.deadline_at} status={request.status} /></div>
+            <div className="small muted">Tbilisi time (Asia/Tbilisi)</div>
+          </div>
         </div>
         <RequestBadge status={request.status} />
       </div>
@@ -127,6 +136,14 @@ export default async function RequestDetailPage({
             </button>
           </div>
         </form>
+
+        <hr />
+        {!("deadline_at" in request) && <p className="notice">Apply the request deadline SQL migration to enable deadlines.</p>}
+        <RequestItemForm action={updateRequestDeadlineAction}>
+          <input type="hidden" name="id" value={request.id} />
+          <DeadlineField value={request.deadline_at} disabled={!("deadline_at" in request)} />
+          <div><button className="btn" type="submit" disabled={!("deadline_at" in request)}>Save Deadline</button></div>
+        </RequestItemForm>
 
         {request.notes && (
           <>

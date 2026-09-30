@@ -27,6 +27,7 @@ export function supplierStatusLabel(value: string) {
 }
 
 const activityLabels: Record<string, string> = {
+  request_deadline_changed: "Request Deadline Changed",
   supplier_link_created: "Supplier Share Link Created",
   supplier_link_revoked: "Supplier Share Link Revoked",
   supplier_item_updated: "Supplier Updated Item",

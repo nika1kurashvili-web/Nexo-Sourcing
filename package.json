@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:security": "node --test tests/supplier-portal.test.cjs"
+    "test:security": "node --test tests/supplier-portal.test.cjs",
+    "test:requests": "node --test tests/request-dates.test.cjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

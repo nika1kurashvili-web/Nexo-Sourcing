@@ -20,6 +20,8 @@ function load(relative) {
   }).outputText;
   const localRequire = name => {
     if (name === 'server-only' || name === 'next/cache') return { revalidatePath() {} };
+    if (name === 'next/navigation') return { redirect: location => { throw Object.assign(new Error('redirect'), { location }); } };
+    if (name === '@/lib/supabase/server') return { createClient: async () => transport };
     if (name === '@/lib/supabase/admin') return { createAdminClient: () => transport };
     if (name === '@/lib/auth') return { requireSourcingAccess: async () => {
       if (!staffAccess) throw new Error('Access denied');
@@ -105,7 +107,9 @@ test('supplier portal security boundaries', async t => {
     grant usage on schema auth to anon, authenticated, service_role;
     create table auth.users(id uuid primary key);
     create table public.sourcing_users(user_id uuid primary key references auth.users(id), active boolean);
-    create table public.sourcing_requests(id uuid primary key, request_no text, updated_at timestamptz default now(), company_name text);
+    create table public.sourcing_requests(id uuid primary key default gen_random_uuid(), request_no text default 'REQ-NEW',
+      created_at timestamptz not null default now(), updated_at timestamptz default now(), company_name text,
+      company_id uuid, title text, client_contact text, notes text, created_by uuid, status text default 'new');
     create table public.sourcing_suppliers(id uuid primary key, name text);
     create type supplier_status as enum ('not_sent','sent','waiting','answered','not_found');
     create table public.sourcing_request_items(
@@ -130,12 +134,19 @@ test('supplier portal security boundaries', async t => {
     ('${ids.otherRequestItem}','${ids.otherRequest}','${ids.supplier}',1,'Other request product',1,'pcs','Private','sent','INTERNAL SECRET','CLIENT SECRET',999);
   `);
   await pg.exec(fs.readFileSync('supabase/migrations/20260930_supplier_portal.sql', 'utf8'));
+  const existingCreated = (await pg.query('select created_at from sourcing_requests where id=$1', [ids.request])).rows[0].created_at;
+  const deadlineMigration = fs.readFileSync('supabase/migrations/20260930_request_deadlines.sql', 'utf8');
+  await pg.exec(deadlineMigration);
+  await pg.exec(deadlineMigration); // Safe to re-run without changing existing data.
+  assert.deepEqual((await pg.query('select created_at, deadline_at from sourcing_requests where id=$1', [ids.request])).rows[0], { created_at: existingCreated, deadline_at: null });
+  await pg.query("update sourcing_requests set deadline_at='2026-12-31T14:00:00Z' where id=$1", [ids.request]);
   transport = adapter(pg);
   const portal = load('lib/supplier-portal.ts');
   const validation = load('lib/supplier-validation.ts');
   const api = load('app/api/supplier/[token]/items/[itemId]/route.ts');
   const imageApi = load('app/api/supplier/[token]/items/[itemId]/images/[imageId]/route.ts');
   const shareActions = load('app/share-link-actions.ts');
+  const requestActions = load('app/actions.ts');
   const insertLink = async (raw, request = ids.request, supplier = ids.supplier, expires = null) => {
     const { rows } = await pg.query(`insert into sourcing_supplier_share_links(request_id,supplier_id,token_hash,created_by,expires_at) values($1,$2,$3,$4,$5) returning id`, [request, supplier, portal.hashToken(raw), ids.user, expires]);
     return rows[0].id;
@@ -154,7 +165,7 @@ test('supplier portal security boundaries', async t => {
     assert.deepEqual(result.items.map(item => item.id), [ids.item]);
     assert.equal(result.requestNo, 'REQ-1');
     const serialized = JSON.stringify(result);
-    for (const forbidden of ['client_price','client_comment','internal_comment','SECRET','Other supplier product','Other request product','company_name','created_by','token_hash']) assert.ok(!serialized.includes(forbidden), forbidden);
+    for (const forbidden of ['client_price','client_comment','internal_comment','SECRET','Other supplier product','Other request product','company_name','created_by','token_hash','created_at','deadline_at','2026-12-31']) assert.ok(!serialized.includes(forbidden), forbidden);
   });
   await t.test('invalid/missing tokens and tampered item IDs reveal nothing', async () => {
     for (const raw of ['', 'bad', 'b'.repeat(64)]) await assert.rejects(portal.readSupplierPortal(raw), /invalid or no longer active/);
@@ -167,7 +178,7 @@ test('supplier portal security boundaries', async t => {
     }
   });
   await t.test('allow-list rejects private fields, bad values and cross-origin writes', async () => {
-    for (const field of ['client_price','internal_comment','client_comment','supplier_id','request_id','product_name','image_url','quantity','unit','specifications']) {
+    for (const field of ['client_price','internal_comment','client_comment','supplier_id','request_id','product_name','image_url','quantity','unit','specifications','deadline_at','created_at']) {
       const result = await post(ids.item, { operation: 'response', response: { ...response, [field]: 'ATTACK' } });
       assert.equal(result.status, 400, field);
     }
@@ -323,6 +334,33 @@ test('supplier portal security boundaries', async t => {
       if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
       else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
     }
+  });
+  await t.test('authenticated request deadlines persist, clear, preserve creation/status, and reject invalid input', async () => {
+    const form = new FormData(); form.set('id', ids.request); form.set('deadline_at', '2026-10-05T18:42');
+    staffAccess = false;
+    await assert.rejects(requestActions.updateRequestDeadlineAction(form), /Access denied/);
+    staffAccess = true;
+    assert.equal(await requestActions.updateRequestDeadlineAction(form), undefined);
+    const read = async () => (await pg.query('select deadline_at,created_at,status from sourcing_requests where id=$1', [ids.request])).rows[0];
+    const saved = await read();
+    assert.equal(new Date(saved.deadline_at).toISOString(), '2026-10-05T14:42:00.000Z');
+    assert.deepEqual(saved.created_at, existingCreated);
+    assert.equal(saved.status, 'new');
+    form.set('deadline_at', '2026-02-30T12:00');
+    assert.ok((await requestActions.updateRequestDeadlineAction(form)).error);
+    assert.deepEqual(await read(), saved);
+    form.set('deadline_at', '');
+    assert.equal(await requestActions.updateRequestDeadlineAction(form), undefined);
+    assert.equal((await read()).deadline_at, null);
+    assert.equal((await pg.query("select count(*)::int as n from sourcing_activity_log where action='request_deadline_changed'")).rows[0].n, 2);
+    const newRequest = new FormData(); newRequest.set('title', 'Deadline creation test'); newRequest.set('deadline_at', '2026-10-10T09:30');
+    await assert.rejects(requestActions.createRequestAction(newRequest), error => error.location?.startsWith('/requests/'));
+    const created = (await pg.query("select deadline_at,created_at from sourcing_requests where title='Deadline creation test'")).rows[0];
+    assert.equal(new Date(created.deadline_at).toISOString(), '2026-10-10T05:30:00.000Z');
+    assert.ok(created.created_at);
+    newRequest.set('title', 'No deadline test'); newRequest.delete('deadline_at');
+    await assert.rejects(requestActions.createRequestAction(newRequest), error => error.location?.startsWith('/requests/'));
+    assert.equal((await pg.query("select deadline_at from sourcing_requests where title='No deadline test'")).rows[0].deadline_at, null);
   });
   await t.test('RLS denies anonymous/nonmember access and RPC execution', async () => {
     await pg.exec('set role anon');

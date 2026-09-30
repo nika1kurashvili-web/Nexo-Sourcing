@@ -4,6 +4,16 @@
 
 Deployment, required SQL/environment setup, link controls, security boundaries, and verification are documented in [docs/supplier-portal.md](docs/supplier-portal.md).
 
+## Request dates and deadlines
+
+Run `supabase/migrations/20260930_request_deadlines.sql` in Supabase SQL Editor to add the optional request-level `deadline_at` column and its index. This additive migration can safely be rerun and reuses the existing `created_at` column without changing existing request data or RLS. No new environment variables are needed.
+
+Created dates appear on the requests list, request detail, and dashboard recent requests. Deadlines can be set on creation, changed in the request detail card, or cleared by leaving the field blank and selecting **Save Deadline**. All date entry/display uses **Asia/Tbilisi** time; deadlines are stored as timezone-aware instants. Active requests show **Due today** until the selected time passes, then **Overdue**. Approved, rejected, and cancelled requests have neutral deadline displays. Dashboard **Upcoming Deadlines** shows up to five future active requests, nearest first. Badges reflect the time when the page is loaded/refreshed; no notifications are sent.
+
+These dates remain internal: the supplier portal does not fetch or return either request date. Deadline changes appear in the internal activity log. Before the SQL is applied, existing requests remain viewable and requests without deadlines can still be created; deadline controls display a setup notice.
+
+Verification: `npm run test:requests`, `npm run test:security`, `npx tsc --noEmit`, and `npm run build`.
+
 ეს არის მარტივი Sourcing CRM, რომელიც მუშაობს იმავე Supabase პროექტზე, სადაც Orders Nexo გაქვთ,
 მაგრამ იყენებს მხოლოდ `sourcing_*` ცხრილებს.
 

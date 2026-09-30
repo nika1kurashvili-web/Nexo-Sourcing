@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireSourcingAccess } from "@/lib/auth";
+import { formatRequestDate, parseDeadlineInput } from "@/lib/request-dates";
 
 function clean(value: FormDataEntryValue | null) {
   const text = String(value ?? "").trim();
@@ -91,6 +92,9 @@ export async function createSupplierAction(formData: FormData) {
 
 export async function createRequestAction(formData: FormData) {
   const { supabase, user } = await requireSourcingAccess();
+  let deadlineAt: string | null;
+  try { deadlineAt = parseDeadlineInput(formData.get("deadline_at")); }
+  catch { redirect("/requests?error=deadline"); }
   const { data, error } = await supabase
     .from("sourcing_requests")
     .insert({
@@ -98,14 +102,33 @@ export async function createRequestAction(formData: FormData) {
       title: clean(formData.get("title")),
       client_contact: clean(formData.get("client_contact")),
       notes: clean(formData.get("notes")),
-      created_by: user.id
+      created_by: user.id,
+      ...(deadlineAt ? { deadline_at: deadlineAt } : {})
     })
     .select("id, request_no")
     .single();
 
   if (error || !data) redirect("/requests?error=create");
   await addLog(data.id, null, "request_created", data.request_no);
+  revalidatePath("/requests");
+  revalidatePath("/dashboard");
   redirect(`/requests/${data.id}`);
+}
+
+export async function updateRequestDeadlineAction(formData: FormData) {
+  const { supabase } = await requireSourcingAccess();
+  const id = String(formData.get("id") ?? "");
+  let deadlineAt: string | null;
+  try { deadlineAt = parseDeadlineInput(formData.get("deadline_at")); }
+  catch { return { error: "Enter a valid deadline date and time." }; }
+  const { data, error } = await supabase.from("sourcing_requests")
+    .update({ deadline_at: deadlineAt, updated_at: new Date().toISOString() }).eq("id", id)
+    .select("id").single();
+  if (error || !data) return { error: "Unable to save deadline. Check request access and that the deadline migration has been applied." };
+  await addLog(id, null, "request_deadline_changed", deadlineAt ? `${formatRequestDate(deadlineAt, true)} (Tbilisi time)` : "Deadline removed");
+  revalidatePath(`/requests/${id}`);
+  revalidatePath("/requests");
+  revalidatePath("/dashboard");
 }
 
 export async function updateRequestStatusAction(formData: FormData) {
