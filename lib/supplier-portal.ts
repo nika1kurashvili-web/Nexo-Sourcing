@@ -44,7 +44,10 @@ export async function readSupplierPortal(token: string) {
   const items = (data ?? []) as SupplierItem[];
   if (!items.length) return { items: [], images: [], requestNo: null, supplierName: null };
   const [request, supplier, images] = await Promise.all([
-    db.from("sourcing_requests").select("request_no").eq("id", link.request_id).single(),
+    db.from("sourcing_requests")
+  .select("request_no,created_at,deadline_at")
+  .eq("id", link.request_id)
+  .single(),
     db.from("sourcing_suppliers").select("name").eq("id", link.supplier_id).single(),
     db.from("sourcing_supplier_images").select("id,request_item_id")
       .eq("request_id", link.request_id).eq("supplier_id", link.supplier_id).eq("ready", true)
@@ -54,5 +57,11 @@ export async function readSupplierPortal(token: string) {
   // Recheck after reads; responses and image routes are never cached.
   await supplierScope(token);
   await db.from("sourcing_supplier_share_links").update({ last_accessed_at: new Date().toISOString() }).eq("id", link.id).eq("active", true);
-  return { items, images: images.data ?? [], requestNo: request.data.request_no as string, supplierName: supplier.data.name as string };
-}
+  return {
+  items,
+  images: images.data ?? [],
+  requestNo: request.data.request_no as string,
+  supplierName: supplier.data.name as string,
+  createdAt: request.data.created_at as string,
+  deadlineAt: request.data.deadline_at as string | null,
+};

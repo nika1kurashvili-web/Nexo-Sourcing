@@ -3,6 +3,7 @@ import { supplierStatusLabel } from "@/lib/labels";
 import { RESPONSE_FIELDS } from "@/lib/supplier-validation";
 import { SupplierResponseForm } from "@/components/SupplierResponseForm";
 import { SupplierSession } from "@/components/SupplierSession";
+import { SupplierRequestDates } from "@/components/SupplierRequestDates";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,8 +17,14 @@ export default async function SupplierPortal({ params }: { params: Promise<{ tok
     {portal.items.length === 0 ? <p className="card">No items are currently assigned to you for this request.</p> : <>
       <div className="page-head"><div>
         <h2>Request: {portal.requestNo}</h2>
-        <p>Supplier: {portal.supplierName}</p>
-        <p className="muted">{portal.items.length} assigned items</p>
+<p>Supplier: {portal.supplierName}</p>
+
+<SupplierRequestDates
+  createdAt={portal.createdAt}
+  deadlineAt={portal.deadlineAt}
+/>
+
+<p className="muted">{portal.items.length} assigned items</p>
       </div></div>
       <div className="stack">{portal.items.map(item => {
         const referenceUrl = item.image_url ? (/^https?:\/\//i.test(item.image_url) ? item.image_url :
