@@ -25,6 +25,6 @@ export function SupplierSession({ token, children }: { token: string; children: 
     window.addEventListener("focus", check);
     return () => { disposed = true; clearInterval(interval); window.removeEventListener("focus", check); };
   }, [token, router]);
-  if (unavailable) return <p className="card">This supplier link is unavailable. Please refresh the page or contact Nexo.</p>;
+  if (unavailable) return <p className="card">This supplier link is invalid or no longer active.</p>;
   return <>{children}</>;
 }

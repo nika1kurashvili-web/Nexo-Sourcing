@@ -9,6 +9,7 @@ const { PGlite } = require('@electric-sql/pglite');
 // Run the actual TypeScript server modules against PostgreSQL, with only the
 // Supabase HTTP transport and Storage replaced. No production credentials/data.
 let transport;
+let staffAccess = true;
 const modules = new Map();
 function load(relative) {
   const file = path.resolve(relative);
@@ -20,6 +21,10 @@ function load(relative) {
   const localRequire = name => {
     if (name === 'server-only' || name === 'next/cache') return { revalidatePath() {} };
     if (name === '@/lib/supabase/admin') return { createAdminClient: () => transport };
+    if (name === '@/lib/auth') return { requireSourcingAccess: async () => {
+      if (!staffAccess) throw new Error('Access denied');
+      return { supabase: transport, user: { id: ids.user } };
+    } };
     if (name.startsWith('@/')) return load(name.slice(2) + '.ts');
     return require(name);
   };
@@ -30,16 +35,18 @@ function load(relative) {
 function adapter(pg) {
   return {
     from(table) {
-      let columns = '*', filters = [], values = [], sort = '', maximum = '', update;
+      let columns = '*', filters = [], values = [], sort = '', maximum = '', update, insert;
       let singular = false, strict = false;
       const add = (column, op, value) => { values.push(value); filters.push(`"${column}" ${op} $${values.length}`); };
       const builder = {
         select(value) { columns = value; return this; },
         eq(column, value) { add(column, '=', value); return this; },
+        lte(column, value) { add(column, '<=', value); return this; },
         is(column, value) { assert.equal(value, null); filters.push(`"${column}" is null`); return this; },
         in(column, value) { add(column, '= any', value); filters[filters.length - 1] = `"${column}" = any($${values.length}::uuid[])`; return this; },
         order(column) { sort = ` order by "${column}"`; return this; },
         update(value) { update = value; return this; },
+        insert(value) { insert = value; return this; },
         limit(value) { maximum = ` limit ${Number(value)}`; return this; },
         maybeSingle() { singular = true; return this; },
         single() { singular = true; strict = true; return this; },
@@ -47,7 +54,11 @@ function adapter(pg) {
           try {
             const where = filters.length ? ` where ${filters.join(' and ')}` : '';
             let sql;
-            if (update) {
+            if (insert) {
+              const keys = Object.keys(insert);
+              values = Object.values(insert);
+              sql = `insert into public."${table}" (${keys.map(key => `"${key}"`).join(',')}) values (${values.map((_, i) => `$${i + 1}`).join(',')}) returning ${columns}`;
+            } else if (update) {
               const assignments = Object.entries(update).map(([key, value]) => { values.push(value); return `"${key}"=$${values.length}`; });
               sql = `update public."${table}" set ${assignments.join(',')}${where} returning ${columns}`;
             } else sql = `select ${columns} from public."${table}"${where}${sort}${maximum}`;
@@ -124,6 +135,7 @@ test('supplier portal security boundaries', async t => {
   const validation = load('lib/supplier-validation.ts');
   const api = load('app/api/supplier/[token]/items/[itemId]/route.ts');
   const imageApi = load('app/api/supplier/[token]/items/[itemId]/images/[imageId]/route.ts');
+  const shareActions = load('app/share-link-actions.ts');
   const insertLink = async (raw, request = ids.request, supplier = ids.supplier, expires = null) => {
     const { rows } = await pg.query(`insert into sourcing_supplier_share_links(request_id,supplier_id,token_hash,created_by,expires_at) values($1,$2,$3,$4,$5) returning id`, [request, supplier, portal.hashToken(raw), ids.user, expires]);
     return rows[0].id;
@@ -155,7 +167,7 @@ test('supplier portal security boundaries', async t => {
     }
   });
   await t.test('allow-list rejects private fields, bad values and cross-origin writes', async () => {
-    for (const field of ['client_price','internal_comment','client_comment','supplier_id','request_id','product_name','image_url','quantity','specifications']) {
+    for (const field of ['client_price','internal_comment','client_comment','supplier_id','request_id','product_name','image_url','quantity','unit','specifications']) {
       const result = await post(ids.item, { operation: 'response', response: { ...response, [field]: 'ATTACK' } });
       assert.equal(result.status, 400, field);
     }
@@ -181,6 +193,7 @@ test('supplier portal security boundaries', async t => {
     const empty = await portal.readSupplierPortal(token);
     assert.deepEqual(empty, { items: [], images: [], requestNo: null, supplierName: null });
     assert.equal((await post(ids.item, { operation: 'response', response })).status, 404);
+    assert.equal((await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: 16 })).status, 404);
     await pg.query('update sourcing_request_items set supplier_id=$1 where id=$2', [ids.supplier, ids.item]);
   });
   await t.test('SQL rechecks assignment even after the server authorization check', async () => {
@@ -204,10 +217,64 @@ test('supplier portal security boundaries', async t => {
     assert.equal(validation.imageMime(new TextEncoder().encode('<svg onload="alert(1)"></svg>')), null);
     assert.equal(validation.imageMime(new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0])), 'image/png');
   });
+  await t.test('signed upload finalizes only verified images; downloads reauthorize and never expose signed URLs', async () => {
+    const png = new Blob([new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0,0,0,0,0])], { type: 'image/png' });
+    const objects = new Map();
+    let issuedPath;
+    const originalStorage = transport.storage;
+    const originalFetch = global.fetch;
+    transport.storage = { from(bucket) {
+      assert.equal(bucket, 'sourcing-files');
+      return {
+        async createSignedUploadUrl(objectPath, options) {
+          assert.deepEqual(options, { upsert: false }); issuedPath = objectPath;
+          return { data: { token: 'one-object-upload-capability' }, error: null };
+        },
+        async download(objectPath) { return { data: objects.get(objectPath), error: null }; },
+        async remove(paths) { paths.forEach(path => objects.delete(path)); return { error: null }; },
+        async createSignedUrl(objectPath, expires) {
+          assert.equal(expires, 15);
+          return { data: { signedUrl: 'https://storage.test/' + objectPath }, error: null };
+        }
+      };
+    } };
+    global.fetch = async (url, init) => {
+      assert.equal(init.cache, 'no-store');
+      return new Response(objects.get(String(url).replace('https://storage.test/', '')));
+    };
+    try {
+      const prepare = await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: png.size });
+      assert.equal(prepare.status, 200);
+      const capability = await prepare.json();
+      assert.equal(capability.path, issuedPath);
+      assert.equal(capability.uploadToken, 'one-object-upload-capability');
+      objects.set(capability.path, png);
+      assert.equal((await post(ids.otherSupplierItem, { operation: 'finish_image', imageId: capability.id })).status, 404);
+      assert.equal((await post(ids.item, { operation: 'finish_image', imageId: capability.id })).status, 200);
+      assert.ok((await portal.readSupplierPortal(token)).images.some(image => image.id === capability.id));
+      const params = { token, itemId: ids.item, imageId: capability.id };
+      const download = await imageApi.GET(new Request('https://sourcing.nexo.ge'), { params: Promise.resolve(params) });
+      assert.equal(download.status, 200);
+      assert.equal(download.headers.get('content-type'), 'image/png');
+      assert.equal(download.headers.get('location'), null);
+      assert.match(download.headers.get('cache-control'), /no-store/);
+      assert.equal((await download.arrayBuffer()).byteLength, png.size);
+      await pg.query('update sourcing_request_items set supplier_id=$1 where id=$2', [ids.otherSupplier, ids.item]);
+      assert.equal((await imageApi.GET(new Request('https://sourcing.nexo.ge'), { params: Promise.resolve(params) })).status, 404);
+      await pg.query('update sourcing_request_items set supplier_id=$1 where id=$2', [ids.supplier, ids.item]);
+      const spoof = await (await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: 16 })).json();
+      objects.set(spoof.path, new Blob(['<svg>attack</svg>'], { type: 'image/png' }));
+      assert.equal((await post(ids.item, { operation: 'finish_image', imageId: spoof.id })).status, 400);
+      assert.ok(!objects.has(spoof.path));
+      assert.ok(!(await portal.readSupplierPortal(token)).images.some(image => image.id === spoof.id));
+      assert.equal((await pg.query('select image_url from sourcing_request_items where id=$1', [ids.item])).rows[0].image_url, null);
+    } finally { transport.storage = originalStorage; global.fetch = originalFetch; }
+  });
   await t.test('revocation blocks reads, updates, images and finalization; token cannot reactivate', async () => {
     await pg.query('update sourcing_supplier_share_links set active=false,revoked_at=now() where id=$1', [linkId]);
     await assert.rejects(portal.readSupplierPortal(token), /invalid or no longer active/);
     assert.equal((await post(ids.item, { operation: 'response', response })).status, 404);
+    assert.equal((await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: 16 })).status, 404);
     assert.equal((await post(ids.item, { operation: 'finish_image', imageId: ids.image })).status, 404);
     assert.equal((await imageApi.GET(new Request('https://sourcing.nexo.ge'), { params: Promise.resolve({ token, itemId: ids.item, imageId: ids.image }) })).status, 404);
     await assert.rejects(pg.query('update sourcing_supplier_share_links set active=true,revoked_at=null where id=$1', [linkId]), /immutable/);
@@ -220,6 +287,42 @@ test('supplier portal security boundaries', async t => {
     const expired = 'd'.repeat(64);
     await insertLink(expired, ids.otherRequest, ids.supplier, '2000-01-01T00:00:00Z');
     await assert.rejects(portal.readSupplierPortal(expired), /invalid or no longer active/);
+  });
+  await t.test('admin creation/revocation requires staff, stores hashes only, logs events, and replaces tokens', async () => {
+    const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-only-configuration-placeholder';
+    try {
+      staffAccess = false;
+      await assert.rejects(shareActions.createSupplierLink(ids.request, ids.otherSupplier, 30), /Access denied/);
+      await assert.rejects(shareActions.revokeSupplierLink(ids.request, ids.supplier, linkId), /Access denied/);
+      staffAccess = true;
+      assert.ok((await shareActions.createSupplierLink(ids.otherRequest, ids.otherSupplier, 30)).error);
+      const created = await shareActions.createSupplierLink(ids.request, ids.otherSupplier, 30);
+      assert.ok(created.url, created.error);
+      const raw = created.url.split('/').pop();
+      assert.match(raw, /^[a-f0-9]{64}$/);
+      const stored = (await pg.query('select * from sourcing_supplier_share_links where id=$1', [created.id])).rows[0];
+      assert.equal(stored.token_hash, portal.hashToken(raw));
+      assert.ok(!JSON.stringify(stored).includes(raw));
+      assert.equal((await portal.readSupplierPortal(raw)).items.length, 1);
+      assert.ok((await shareActions.createSupplierLink(ids.request, ids.otherSupplier, 30)).error);
+      const beforeCount = (await pg.query('select count(*)::int as n from sourcing_request_items')).rows[0].n;
+      assert.equal((await shareActions.revokeSupplierLink(ids.request, ids.otherSupplier, created.id)).ok, true);
+      await assert.rejects(portal.readSupplierPortal(raw));
+      const replacement = await shareActions.createSupplierLink(ids.request, ids.otherSupplier, 7);
+      assert.ok(replacement.url, replacement.error);
+      assert.notEqual(replacement.url, created.url);
+      assert.equal((await portal.readSupplierPortal(replacement.url.split('/').pop())).items.length, 1);
+      await shareActions.revokeSupplierLink(ids.request, ids.otherSupplier, replacement.id);
+      assert.equal((await pg.query('select count(*)::int as n from sourcing_request_items')).rows[0].n, beforeCount);
+      const actions = (await pg.query('select action,details from sourcing_activity_log')).rows;
+      for (const action of ['supplier_link_created','supplier_link_revoked','supplier_item_updated','supplier_image_uploaded']) assert.ok(actions.some(row => row.action === action), action);
+      assert.ok(!JSON.stringify(actions).includes(raw));
+    } finally {
+      staffAccess = true;
+      if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
+    }
   });
   await t.test('RLS denies anonymous/nonmember access and RPC execution', async () => {
     await pg.exec('set role anon');
@@ -236,6 +339,13 @@ test('supplier portal security boundaries', async t => {
     await pg.query("select set_config('test.uid',$1,false)", [ids.user]);
     await pg.exec('set role authenticated');
     assert.ok((await pg.query('select id from sourcing_supplier_share_links')).rows.length > 0);
+    // The same limited role used by admin actions can insert/return only the id
+    // and revoke, but cannot read hashes or reactivate/alter link identities.
+    const staffHash = portal.hashToken('e'.repeat(64));
+    const staffLink = (await pg.query('insert into sourcing_supplier_share_links(request_id,supplier_id,token_hash,created_by) values($1,$2,$3,$4) returning id', [ids.request, ids.otherSupplier, staffHash, ids.user])).rows[0].id;
+    await pg.query('update sourcing_supplier_share_links set active=false,revoked_at=now() where id=$1', [staffLink]);
+    await assert.rejects(pg.query('update sourcing_supplier_share_links set active=true,revoked_at=null where id=$1', [staffLink]));
+    await assert.rejects(pg.query('update sourcing_supplier_share_links set request_id=$1 where id=$2', [ids.otherRequest, staffLink]), /permission denied/);
     await pg.exec('reset role');
     assert.deepEqual((await pg.query("select public,file_size_limit from storage.buckets where id='sourcing-files'")).rows[0], { public: false, file_size_limit: 10485760 });
   });

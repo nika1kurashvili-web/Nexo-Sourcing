@@ -101,6 +101,11 @@ begin
     and request_id = share.request_id and supplier_id = share.supplier_id for update;
   if not found then raise exception 'Invalid supplier access'; end if;
 
+  -- A lock wait must not allow a token that has expired in the meantime.
+  if share.expires_at is not null and share.expires_at <= clock_timestamp() then
+    raise exception 'Invalid supplier access';
+  end if;
+
   if p_operation = 'response' then
     if jsonb_typeof(p_payload) <> 'object' or exists (
       select 1 from jsonb_object_keys(p_payload) k where k not in

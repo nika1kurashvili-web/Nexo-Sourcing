@@ -1,5 +1,9 @@
 # Nexo Sourcing v2
 
+## Supplier Portal
+
+Deployment, required SQL/environment setup, link controls, security boundaries, and verification are documented in [docs/supplier-portal.md](docs/supplier-portal.md).
+
 ეს არის მარტივი Sourcing CRM, რომელიც მუშაობს იმავე Supabase პროექტზე, სადაც Orders Nexo გაქვთ,
 მაგრამ იყენებს მხოლოდ `sourcing_*` ცხრილებს.
 
