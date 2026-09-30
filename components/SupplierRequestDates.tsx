@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 type Props = {
-  createdAt: string;
+  createdAt?: string | null;
   deadlineAt?: string | null;
 };
 
@@ -66,10 +66,12 @@ export function SupplierRequestDates({
         gap: 5,
       }}
     >
-      <div>
-        <strong>Created:</strong>{" "}
-        {formatLocalDate(createdAt)}
-      </div>
+      {createdAt && (
+  <div>
+    <strong>Created:</strong>{" "}
+    {formatLocalDate(createdAt)}
+  </div>
+)}
 
       {deadlineAt && (
         <div>
