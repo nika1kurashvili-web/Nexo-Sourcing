@@ -17,7 +17,145 @@ function numberOrNull(value: FormDataEntryValue | null) {
   const num = Number(text);
   return Number.isFinite(num) ? num : null;
 }
+const STORAGE_BUCKET = "sourcing-files";
+const MAX_REFERENCE_IMAGES = 5;
 
+function parseReferenceImagePaths(
+  value: FormDataEntryValue | null,
+  requestId: string
+) {
+  const raw = String(value ?? "").trim();
+
+  if (!raw) return [];
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid reference image data.");
+  }
+
+  if (!Array.isArray(parsed)) {
+    throw new Error("Invalid reference image data.");
+  }
+
+  if (parsed.some((value) => typeof value !== "string")) {
+    throw new Error("Invalid reference image data.");
+  }
+
+  const paths = Array.from(
+    new Set(
+      (parsed as string[])
+        .map((path) => path.trim())
+        .filter(Boolean)
+    )
+  );
+
+  for (const path of paths) {
+    if (
+      /^https?:\/\//i.test(path) ||
+      !path.startsWith(`requests/${requestId}/`)
+    ) {
+      throw new Error("Invalid reference image path.");
+    }
+  }
+
+  return paths;
+}
+
+async function syncReferenceImages(
+  supabase: any,
+  userId: string,
+  requestId: string,
+  requestItemId: string,
+  legacyImage: string | null,
+  requestedPaths: string[]
+) {
+  const total =
+    (legacyImage ? 1 : 0) + requestedPaths.length;
+
+  if (total > MAX_REFERENCE_IMAGES) {
+    throw new Error(
+      "Maximum 5 reference images are allowed per product."
+    );
+  }
+
+  const { data: existing, error: readError } =
+    await supabase
+      .from("sourcing_request_item_images")
+      .select("id, object_path, sort_order")
+      .eq("request_item_id", requestItemId);
+
+  if (readError) throw readError;
+
+  const existingRows = existing ?? [];
+  const requestedSet = new Set(requestedPaths);
+  const existingPathSet = new Set(
+    existingRows.map((row: any) => row.object_path)
+  );
+
+  const removedRows = existingRows.filter(
+    (row: any) => !requestedSet.has(row.object_path)
+  );
+
+  if (removedRows.length) {
+    const { error: deleteError } = await supabase
+      .from("sourcing_request_item_images")
+      .delete()
+      .in(
+        "id",
+        removedRows.map((row: any) => row.id)
+      );
+
+    if (deleteError) throw deleteError;
+  }
+
+  const newPaths = requestedPaths.filter(
+    (path) => !existingPathSet.has(path)
+  );
+
+  if (newPaths.length) {
+    const { error: insertError } = await supabase
+      .from("sourcing_request_item_images")
+      .insert(
+        newPaths.map((path) => ({
+          request_item_id: requestItemId,
+          object_path: path,
+          created_by: userId,
+          sort_order: requestedPaths.indexOf(path),
+        }))
+      );
+
+    if (insertError) throw insertError;
+  }
+
+  for (let index = 0; index < requestedPaths.length; index++) {
+    const { error: orderError } = await supabase
+      .from("sourcing_request_item_images")
+      .update({ sort_order: index })
+      .eq("request_item_id", requestItemId)
+      .eq("object_path", requestedPaths[index]);
+
+    if (orderError) throw orderError;
+  }
+
+  const removedPaths = removedRows.map(
+    (row: any) => row.object_path as string
+  );
+
+  // Best-effort cleanup of deleted Storage objects.
+  if (removedPaths.length) {
+    await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove(removedPaths);
+  }
+
+  return {
+    added: newPaths,
+    removed: removedPaths,
+  };
+}
 async function addLog(
   requestId: string | null,
   requestItemId: string | null,
@@ -144,91 +282,388 @@ export async function updateRequestStatusAction(formData: FormData) {
   revalidatePath("/dashboard");
 }
 
-export async function createRequestItemAction(formData: FormData) {
-  const { supabase } = await requireSourcingAccess();
-  const requestId = String(formData.get("request_id") ?? "");
+export async function createRequestItemAction(
+  formData: FormData
+) {
+  const { supabase, user } =
+    await requireSourcingAccess();
+
+  const requestId = String(
+    formData.get("request_id") ?? ""
+  );
+
+  const legacyImage = clean(
+    formData.get("image_url")
+  );
+
+  let referenceImages: string[];
+
+  try {
+    referenceImages = parseReferenceImagePaths(
+      formData.get("reference_images_json"),
+      requestId
+    );
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Invalid reference images.",
+    };
+  }
+
+  if (
+    (legacyImage ? 1 : 0) +
+      referenceImages.length >
+    MAX_REFERENCE_IMAGES
+  ) {
+    return {
+      error:
+        "Maximum 5 reference images are allowed per product.",
+    };
+  }
 
   const { data, error } = await supabase
     .from("sourcing_request_items")
     .insert({
       request_id: requestId,
-      product_name: clean(formData.get("product_name")),
-      quantity: numberOrNull(formData.get("quantity")),
+      product_name: clean(
+        formData.get("product_name")
+      ),
+      quantity: numberOrNull(
+        formData.get("quantity")
+      ),
       unit: clean(formData.get("unit")) ?? "pcs",
-      specifications: clean(formData.get("specifications")),
-      image_url: clean(formData.get("image_url")),
-      supplier_id: clean(formData.get("supplier_id")),
-      supplier_status: clean(formData.get("supplier_status")) ?? "not_sent",
-      china_price: numberOrNull(formData.get("china_price")),
-      currency: clean(formData.get("currency")) ?? "USD",
-      client_price: numberOrNull(formData.get("client_price")),
+      specifications: clean(
+        formData.get("specifications")
+      ),
+      image_url: legacyImage,
+      supplier_id: clean(
+        formData.get("supplier_id")
+      ),
+      supplier_status:
+        clean(formData.get("supplier_status")) ??
+        "not_sent",
+      china_price: numberOrNull(
+        formData.get("china_price")
+      ),
+      currency:
+        clean(formData.get("currency")) ?? "USD",
+      client_price: numberOrNull(
+        formData.get("client_price")
+      ),
       moq: numberOrNull(formData.get("moq")),
-      lead_time_days: numberOrNull(formData.get("lead_time_days")),
-      box_length_cm: numberOrNull(formData.get("box_length_cm")),
-      box_width_cm: numberOrNull(formData.get("box_width_cm")),
-      box_height_cm: numberOrNull(formData.get("box_height_cm")),
-      weight_kg: numberOrNull(formData.get("weight_kg")),
-      supplier_comment: clean(formData.get("supplier_comment")),
-      internal_comment: clean(formData.get("internal_comment")),
-      client_comment: clean(formData.get("client_comment"))
+      lead_time_days: numberOrNull(
+        formData.get("lead_time_days")
+      ),
+      box_length_cm: numberOrNull(
+        formData.get("box_length_cm")
+      ),
+      box_width_cm: numberOrNull(
+        formData.get("box_width_cm")
+      ),
+      box_height_cm: numberOrNull(
+        formData.get("box_height_cm")
+      ),
+      weight_kg: numberOrNull(
+        formData.get("weight_kg")
+      ),
+      supplier_comment: clean(
+        formData.get("supplier_comment")
+      ),
+      internal_comment: clean(
+        formData.get("internal_comment")
+      ),
+      client_comment: clean(
+        formData.get("client_comment")
+      ),
     })
     .select("id, product_name")
     .single();
 
-  if (error || !data) return { error: `Unable to create item: ${error?.message ?? "No item returned"}` };
-
-  if (data) {
-    await supabase.from("sourcing_requests").update({ updated_at: new Date().toISOString() }).eq("id", requestId);
-    await addLog(requestId, data.id, "item_created", data.product_name);
-    const image = clean(formData.get("image_url"));
-    if (image && !/^https?:\/\//i.test(image)) await addLog(requestId, data.id, "item_image_uploaded", image);
+  if (error || !data) {
+    return {
+      error: `Unable to create item: ${
+        error?.message ?? "No item returned"
+      }`,
+    };
   }
+
+  try {
+    const imageChanges =
+      await syncReferenceImages(
+        supabase,
+        user.id,
+        requestId,
+        data.id,
+        legacyImage,
+        referenceImages
+      );
+
+    if (
+      legacyImage &&
+      !/^https?:\/\//i.test(legacyImage)
+    ) {
+      await addLog(
+        requestId,
+        data.id,
+        "item_image_uploaded",
+        legacyImage
+      );
+    }
+
+    for (const path of imageChanges.added) {
+      await addLog(
+        requestId,
+        data.id,
+        "item_image_uploaded",
+        path
+      );
+    }
+  } catch (imageError) {
+    await supabase
+      .from("sourcing_request_items")
+      .delete()
+      .eq("id", data.id)
+      .eq("request_id", requestId);
+
+    if (referenceImages.length) {
+      await supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove(referenceImages);
+    }
+
+    return {
+      error: `Unable to save item images: ${
+        imageError instanceof Error
+          ? imageError.message
+          : "Unknown image error"
+      }`,
+    };
+  }
+
+  await supabase
+    .from("sourcing_requests")
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
+
+  await addLog(
+    requestId,
+    data.id,
+    "item_created",
+    data.product_name
+  );
 
   revalidatePath(`/requests/${requestId}`);
   revalidatePath("/dashboard");
 }
+export async function updateRequestItemAction(
+  formData: FormData
+) {
+  const { supabase, user } =
+    await requireSourcingAccess();
 
-export async function updateRequestItemAction(formData: FormData) {
-  const { supabase } = await requireSourcingAccess();
   const id = String(formData.get("id") ?? "");
-  const requestId = String(formData.get("request_id") ?? "");
+  const requestId = String(
+    formData.get("request_id") ?? ""
+  );
 
-  const { data: previous, error: readError } = await supabase.from("sourcing_request_items").select("image_url").eq("id", id).eq("request_id", requestId).single();
-  if (readError || !previous) return { error: "Item unavailable." };
+  const legacyImage = clean(
+    formData.get("image_url")
+  );
 
-  const { data: updated, error } = await supabase
-    .from("sourcing_request_items")
-    .update({
-      product_name: clean(formData.get("product_name")),
-      quantity: numberOrNull(formData.get("quantity")),
-      unit: clean(formData.get("unit")) ?? "pcs",
-      specifications: clean(formData.get("specifications")),
-      image_url: clean(formData.get("image_url")),
-      supplier_id: clean(formData.get("supplier_id")),
-      supplier_status: clean(formData.get("supplier_status")) ?? "not_sent",
-      china_price: numberOrNull(formData.get("china_price")),
-      currency: clean(formData.get("currency")) ?? "USD",
-      client_price: numberOrNull(formData.get("client_price")),
-      moq: numberOrNull(formData.get("moq")),
-      lead_time_days: numberOrNull(formData.get("lead_time_days")),
-      box_length_cm: numberOrNull(formData.get("box_length_cm")),
-      box_width_cm: numberOrNull(formData.get("box_width_cm")),
-      box_height_cm: numberOrNull(formData.get("box_height_cm")),
-      weight_kg: numberOrNull(formData.get("weight_kg")),
-      supplier_comment: clean(formData.get("supplier_comment")),
-      internal_comment: clean(formData.get("internal_comment")),
-      client_comment: clean(formData.get("client_comment"))
-    })
-    .eq("id", id).eq("request_id", requestId).select("id").single();
+  let referenceImages: string[];
 
-  if (error || !updated) return { error: `Unable to save item: ${error?.message ?? "Item unavailable"}` };
-
-  if (updated) {
-    const image = clean(formData.get("image_url"));
-    if (image && image !== previous.image_url && !/^https?:\/\//i.test(image)) await addLog(requestId, id, "item_image_uploaded", image);
-    await supabase.from("sourcing_requests").update({ updated_at: new Date().toISOString() }).eq("id", requestId);
-    await addLog(requestId, id, "item_updated", clean(formData.get("product_name")));
+  try {
+    referenceImages = parseReferenceImagePaths(
+      formData.get("reference_images_json"),
+      requestId
+    );
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Invalid reference images.",
+    };
   }
+
+  if (
+    (legacyImage ? 1 : 0) +
+      referenceImages.length >
+    MAX_REFERENCE_IMAGES
+  ) {
+    return {
+      error:
+        "Maximum 5 reference images are allowed per product.",
+    };
+  }
+
+  const {
+    data: previous,
+    error: readError,
+  } = await supabase
+    .from("sourcing_request_items")
+    .select("image_url")
+    .eq("id", id)
+    .eq("request_id", requestId)
+    .single();
+
+  if (readError || !previous) {
+    return { error: "Item unavailable." };
+  }
+
+  const { data: updated, error } =
+    await supabase
+      .from("sourcing_request_items")
+      .update({
+        product_name: clean(
+          formData.get("product_name")
+        ),
+        quantity: numberOrNull(
+          formData.get("quantity")
+        ),
+        unit:
+          clean(formData.get("unit")) ?? "pcs",
+        specifications: clean(
+          formData.get("specifications")
+        ),
+        image_url: legacyImage,
+        supplier_id: clean(
+          formData.get("supplier_id")
+        ),
+        supplier_status:
+          clean(
+            formData.get("supplier_status")
+          ) ?? "not_sent",
+        china_price: numberOrNull(
+          formData.get("china_price")
+        ),
+        currency:
+          clean(formData.get("currency")) ??
+          "USD",
+        client_price: numberOrNull(
+          formData.get("client_price")
+        ),
+        moq: numberOrNull(
+          formData.get("moq")
+        ),
+        lead_time_days: numberOrNull(
+          formData.get("lead_time_days")
+        ),
+        box_length_cm: numberOrNull(
+          formData.get("box_length_cm")
+        ),
+        box_width_cm: numberOrNull(
+          formData.get("box_width_cm")
+        ),
+        box_height_cm: numberOrNull(
+          formData.get("box_height_cm")
+        ),
+        weight_kg: numberOrNull(
+          formData.get("weight_kg")
+        ),
+        supplier_comment: clean(
+          formData.get("supplier_comment")
+        ),
+        internal_comment: clean(
+          formData.get("internal_comment")
+        ),
+        client_comment: clean(
+          formData.get("client_comment")
+        ),
+      })
+      .eq("id", id)
+      .eq("request_id", requestId)
+      .select("id")
+      .single();
+
+  if (error || !updated) {
+    return {
+      error: `Unable to save item: ${
+        error?.message ?? "Item unavailable"
+      }`,
+    };
+  }
+
+  try {
+    const imageChanges =
+      await syncReferenceImages(
+        supabase,
+        user.id,
+        requestId,
+        id,
+        legacyImage,
+        referenceImages
+      );
+
+    if (
+      legacyImage &&
+      legacyImage !== previous.image_url &&
+      !/^https?:\/\//i.test(legacyImage)
+    ) {
+      await addLog(
+        requestId,
+        id,
+        "item_image_uploaded",
+        legacyImage
+      );
+    }
+
+    for (const path of imageChanges.added) {
+      await addLog(
+        requestId,
+        id,
+        "item_image_uploaded",
+        path
+      );
+    }
+
+    for (const path of imageChanges.removed) {
+      await addLog(
+        requestId,
+        id,
+        "item_image_deleted",
+        path
+      );
+    }
+
+    // Remove an old legacy Storage image when it was
+    // removed or replaced.
+    if (
+      previous.image_url &&
+      previous.image_url !== legacyImage &&
+      !/^https?:\/\//i.test(previous.image_url)
+    ) {
+      await supabase.storage
+        .from(STORAGE_BUCKET)
+        .remove([previous.image_url]);
+    }
+  } catch (imageError) {
+    return {
+      error: `Item details were saved, but the image gallery could not be updated: ${
+        imageError instanceof Error
+          ? imageError.message
+          : "Unknown image error"
+      }`,
+    };
+  }
+
+  await supabase
+    .from("sourcing_requests")
+    .update({
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
+
+  await addLog(
+    requestId,
+    id,
+    "item_updated",
+    clean(formData.get("product_name"))
+  );
 
   revalidatePath(`/requests/${requestId}`);
   revalidatePath("/dashboard");

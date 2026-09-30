@@ -27,8 +27,30 @@ export default async function SupplierPortal({ params }: { params: Promise<{ tok
 <p className="muted">{portal.items.length} assigned items</p>
       </div></div>
       <div className="stack">{portal.items.map(item => {
-        const referenceUrl = item.image_url ? (/^https?:\/\//i.test(item.image_url) ? item.image_url :
-          `/api/supplier/${token}/items/${item.id}/images/reference`) : null;
+        const referenceImages = [
+  ...(item.image_url
+    ? [
+        {
+          id: "reference",
+          url: /^https?:\/\//i.test(
+            item.image_url
+          )
+            ? item.image_url
+            : `/api/supplier/${token}/items/${item.id}/images/reference`,
+        },
+      ]
+    : []),
+
+  ...portal.referenceImages
+    .filter(
+      (image) =>
+        image.request_item_id === item.id
+    )
+    .map((image) => ({
+      id: image.id as string,
+      url: `/api/supplier/${token}/items/${item.id}/images/ref-${image.id}`,
+    })),
+];
         const response = Object.fromEntries(RESPONSE_FIELDS.map(key => [key, item[key]]));
         const images = portal.images.filter(image => image.request_item_id === item.id).map(image => ({
           id: image.id as string, url: `/api/supplier/${token}/items/${item.id}/images/${image.id}`
@@ -42,9 +64,50 @@ export default async function SupplierPortal({ params }: { params: Promise<{ tok
           </summary>
           <div className="item-content form-grid">
             <div><strong>Specifications</strong><p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{item.specifications || "No specifications provided."}</p></div>
-            {referenceUrl && <div><div className="section-label">Nexo Reference Image (read-only)</div>
-              <a href={referenceUrl} target="_blank" rel="noopener noreferrer" className="upload-preview-link"><img src={referenceUrl} referrerPolicy="no-referrer" className="upload-preview" alt="Nexo reference image" /></a>
-            </div>}
+            {referenceImages.length > 0 && (
+  <div>
+    <div className="section-label">
+      Nexo Reference Images (read-only)
+    </div>
+
+    <div
+      className="upload-controls"
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 10,
+      }}
+    >
+      {referenceImages.map(
+        (image, index) => (
+          <a
+            key={image.id}
+            href={image.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="upload-preview-link"
+          >
+            <img
+              src={image.url}
+              referrerPolicy="no-referrer"
+              className="upload-preview"
+              alt={`Nexo reference image ${
+                index + 1
+              }`}
+            />
+          </a>
+        )
+      )}
+    </div>
+
+    <div className="small muted">
+      {referenceImages.length} reference{" "}
+      {referenceImages.length === 1
+        ? "image"
+        : "images"}
+    </div>
+  </div>
+)}
             <SupplierResponseForm token={token} itemId={item.id} response={response} images={images} />
           </div>
         </details>;

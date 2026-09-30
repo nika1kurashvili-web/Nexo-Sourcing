@@ -31,7 +31,7 @@ export function ReferenceImagesField({
   requestItemId,
   legacyPath = "",
   legacyPreviewUrl = "",
-  initialImages = [],
+  initialImages,
 }: {
   requestId: string;
   requestItemId?: string;
@@ -49,12 +49,12 @@ export function ReferenceImagesField({
     legacyPreviewUrl ?? ""
   );
 
-  const [images, setImages] = useState<ImageState[]>(
-    initialImages.map((image) => ({
-      ...image,
-      existing: true,
-    }))
-  );
+  const [images, setImages] = useState<ImageState[]>(() =>
+  (initialImages ?? []).map((image) => ({
+    ...image,
+    existing: true,
+  }))
+);
 
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
@@ -66,11 +66,11 @@ export function ReferenceImagesField({
     setLegacyPreview(legacyPreviewUrl ?? "");
 
     setImages(
-      initialImages.map((image) => ({
-        ...image,
-        existing: true,
-      }))
-    );
+  (initialImages ?? []).map((image) => ({
+    ...image,
+    existing: true,
+  }))
+);
   }, [legacyPath, legacyPreviewUrl, initialImages]);
 
   const totalImages =

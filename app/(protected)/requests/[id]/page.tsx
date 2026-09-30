@@ -10,7 +10,7 @@ import {
 import { requireSourcingAccess } from "@/lib/auth";
 import { activityLabel, requestStatusLabel, requestStatuses, supplierStatuses, supplierStatusLabel } from "@/lib/labels";
 import { RequestBadge } from "@/components/RequestBadge";
-import { ImageUploadField } from "@/components/ImageUploadField";
+import { ReferenceImagesField } from "@/components/ReferenceImagesField";
 
 import { RequestItemForm } from "@/components/RequestItemForm";
 import { SupplierShareLinks } from "@/components/SupplierShareLinks";
@@ -80,6 +80,55 @@ export default async function RequestDetailPage({
   );
 
   const previewByItemId = Object.fromEntries(previewEntries) as Record<string, string>;
+  const referenceImageRows = items.length
+  ? (
+      await supabase
+        .from("sourcing_request_item_images")
+        .select("id, request_item_id, object_path, sort_order")
+        .in(
+          "request_item_id",
+          items.map((item) => item.id)
+        )
+        .order("sort_order", { ascending: true })
+    ).data ?? []
+  : [];
+
+const referenceImagePreviews = await Promise.all(
+  referenceImageRows.map(async (image) => {
+    const { data } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .createSignedUrl(image.object_path, 3600);
+
+    return {
+      id: image.id as string,
+      requestItemId: image.request_item_id as string,
+      path: image.object_path as string,
+      previewUrl: data?.signedUrl ?? "",
+    };
+  })
+);
+
+const referenceImagesByItemId = Object.fromEntries(
+  items.map((item) => [
+    item.id,
+    referenceImagePreviews
+      .filter(
+        (image) => image.requestItemId === item.id
+      )
+      .map((image) => ({
+        id: image.id,
+        path: image.path,
+        previewUrl: image.previewUrl,
+      })),
+  ])
+) as Record<
+  string,
+  {
+    id: string;
+    path: string;
+    previewUrl: string;
+  }[]
+>;
   const assignedSuppliers = new Map<string, { id: string; name: string; count: number }>();
   for (const item of items) {
     if (!item.supplier_id) continue;
@@ -283,9 +332,14 @@ export default async function RequestDetailPage({
           </div>
 
           <div>
-            <div className="section-label">Product Image</div>
-            <ImageUploadField requestId={request.id} />
-          </div>
+  <div className="section-label">
+    Product Images
+  </div>
+
+  <ReferenceImagesField
+    requestId={request.id}
+  />
+</div>
 
           <button className="btn" type="submit">
             Add Item
@@ -520,14 +574,22 @@ export default async function RequestDetailPage({
               </label>
 
               <div>
-                <div className="section-label">Product Image</div>
-                <ImageUploadField
-                  requestId={request.id}
-                  requestItemId={item.id}
-                  initialPath={item.image_url ?? ""}
-                  initialPreviewUrl={previewByItemId[item.id] ?? ""}
-                />
-              </div>
+  <div className="section-label">
+    Product Images
+  </div>
+
+  <ReferenceImagesField
+    requestId={request.id}
+    requestItemId={item.id}
+    legacyPath={item.image_url ?? ""}
+    legacyPreviewUrl={
+      previewByItemId[item.id] ?? ""
+    }
+    initialImages={
+      referenceImagesByItemId[item.id] ?? []
+    }
+  />
+</div>
 
               <button className="btn" type="submit">
                 Save
