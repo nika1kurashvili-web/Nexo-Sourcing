@@ -8,6 +8,7 @@ import { RESPONSE_FIELDS } from "@/lib/supplier-validation";
 import { SupplierResponseForm } from "@/components/SupplierResponseForm";
 import { SupplierSession } from "@/components/SupplierSession";
 import { SupplierRequestDates } from "@/components/SupplierRequestDates";
+import { SupplierItemAccordion } from "@/components/SupplierItemAccordion";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,14 +53,11 @@ export default async function SupplierPortal({
 
               <SupplierRequestDates
                 createdAt={portal.createdAt}
-                deadlineAt={
-                  portal.deadlineAt
-                }
+                deadlineAt={portal.deadlineAt}
               />
 
               <p className="muted">
-                {portal.items.length}{" "}
-                assigned items
+                {portal.items.length} assigned items
               </p>
             </div>
           </div>
@@ -83,8 +81,7 @@ export default async function SupplierPortal({
                 ...portal.referenceImages
                   .filter(
                     (image) =>
-                      image.request_item_id ===
-                      item.id
+                      image.request_item_id === item.id
                   )
                   .map((image) => ({
                     id: image.id as string,
@@ -94,80 +91,54 @@ export default async function SupplierPortal({
 
               const response =
                 Object.fromEntries(
-                  RESPONSE_FIELDS.map(
-                    (key) => [
-                      key,
-                      item[key],
-                    ]
-                  )
+                  RESPONSE_FIELDS.map((key) => [
+                    key,
+                    item[key],
+                  ])
                 );
 
               const images =
                 portal.images
                   .filter(
                     (image) =>
-                      image.request_item_id ===
-                      item.id
+                      image.request_item_id === item.id
                   )
                   .map((image) => ({
                     id: image.id as string,
                     url: `/api/supplier/${token}/items/${item.id}/images/${image.id}`,
                   }));
 
+              const unread =
+                Boolean(
+                  item.nexo_changed_at &&
+                    (
+                      !item.supplier_seen_at ||
+                      Date.parse(
+                        item.nexo_changed_at
+                      ) >
+                        Date.parse(
+                          item.supplier_seen_at
+                        )
+                    )
+                );
+
               return (
-                <details
-                  className="item-card item-accordion"
+                <SupplierItemAccordion
                   key={item.id}
+                  token={token}
+                  itemId={item.id}
+                  itemNo={item.item_no}
+                  productName={item.product_name}
+                  quantity={item.quantity}
+                  unit={item.unit}
+                  statusLabel={supplierStatusLabel(
+                    item.supplier_status
+                  )}
+                  initialUnread={unread}
+                  changedAt={
+                    item.nexo_changed_at
+                  }
                 >
-                  <summary className="item-summary">
-                    <span className="item-summary-title">
-                      <span className="item-number">
-                        ITEM-
-                        {String(
-                          item.item_no
-                        ).padStart(
-                          2,
-                          "0"
-                        )}
-                      </span>
-
-                      <span className="item-title">
-                        {
-                          item.product_name
-                        }
-                      </span>
-                    </span>
-
-                    {item.quantity !=
-                      null && (
-                      <span className="small">
-                        Quantity:{" "}
-                        {item.quantity}{" "}
-                        {item.unit ??
-                          "pcs"}
-                      </span>
-                    )}
-
-                    <span className="badge">
-                      {supplierStatusLabel(
-                        item.supplier_status
-                      )}
-                    </span>
-
-                    <svg
-                      className="item-chevron"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      aria-hidden="true"
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </summary>
-
                   <div className="item-content form-grid">
                     <div>
                       <strong>
@@ -176,10 +147,8 @@ export default async function SupplierPortal({
 
                       <p
                         style={{
-                          whiteSpace:
-                            "pre-wrap",
-                          overflowWrap:
-                            "anywhere",
+                          whiteSpace: "pre-wrap",
+                          overflowWrap: "anywhere",
                         }}
                       >
                         {item.specifications ||
@@ -187,22 +156,18 @@ export default async function SupplierPortal({
                       </p>
                     </div>
 
-                    {referenceImages.length >
-                      0 && (
+                    {referenceImages.length > 0 && (
                       <div>
                         <div className="section-label">
-                          Nexo Reference
-                          Images
+                          Nexo Reference Images
                           (read-only)
                         </div>
 
                         <div
                           className="upload-controls"
                           style={{
-                            display:
-                              "flex",
-                            flexWrap:
-                              "wrap",
+                            display: "flex",
+                            flexWrap: "wrap",
                             gap: 10,
                           }}
                         >
@@ -212,25 +177,18 @@ export default async function SupplierPortal({
                               index
                             ) => (
                               <a
-                                key={
-                                  image.id
-                                }
-                                href={
-                                  image.url
-                                }
+                                key={image.id}
+                                href={image.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="upload-preview-link"
                               >
                                 <img
-                                  src={
-                                    image.url
-                                  }
+                                  src={image.url}
                                   referrerPolicy="no-referrer"
                                   className="upload-preview"
                                   alt={`Nexo reference image ${
-                                    index +
-                                    1
+                                    index + 1
                                   }`}
                                   loading="lazy"
                                   decoding="async"
@@ -245,8 +203,7 @@ export default async function SupplierPortal({
                             referenceImages.length
                           }{" "}
                           reference{" "}
-                          {referenceImages.length ===
-                          1
+                          {referenceImages.length === 1
                             ? "image"
                             : "images"}
                         </div>
@@ -260,7 +217,7 @@ export default async function SupplierPortal({
                       images={images}
                     />
                   </div>
-                </details>
+                </SupplierItemAccordion>
               );
             })}
           </div>
