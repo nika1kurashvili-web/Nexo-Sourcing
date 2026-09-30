@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test:security": "node --test tests/supplier-portal.test.cjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
