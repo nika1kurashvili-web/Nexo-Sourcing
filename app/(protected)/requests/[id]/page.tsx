@@ -215,7 +215,7 @@ const supplierImagePreviews =
       ] ?? "",
   }));
 
-  const previewByItemId = Object.fromEntries(previewEntries) as Record<string, string>;
+ 
   const referenceImageRows = items.length
   ? (
       await supabase
