@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useItemUpload } from "@/components/RequestItemForm";
 
 const BUCKET = "sourcing-files";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -13,11 +14,13 @@ function safeExtension(fileName: string) {
 
 export function ImageUploadField({
   requestId,
+  requestItemId,
   name = "image_url",
   initialPath = "",
   initialPreviewUrl = ""
 }: {
   requestId: string;
+  requestItemId?: string;
   name?: string;
   initialPath?: string | null;
   initialPreviewUrl?: string | null;
@@ -27,6 +30,12 @@ export function ImageUploadField({
   const [previewUrl, setPreviewUrl] = useState(initialPreviewUrl ?? "");
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
+  const { setUploading: setFormUploading } = useItemUpload();
+
+  useEffect(() => {
+    setPath(initialPath ?? "");
+    setPreviewUrl(initialPreviewUrl ?? "");
+  }, [initialPath, initialPreviewUrl]);
 
   async function uploadFile(file: File) {
     setMessage("");
@@ -42,10 +51,18 @@ export function ImageUploadField({
     }
 
     setUploading(true);
+    setFormUploading(true);
 
     try {
       const extension = safeExtension(file.name);
-      const objectPath = `requests/${requestId}/${crypto.randomUUID()}.${extension}`;
+      const filename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || `image.${extension}`;
+      const objectPath = `requests/${requestId}/${requestItemId ?? `temp-${crypto.randomUUID()}`}/${Date.now()}-${crypto.randomUUID()}-${filename}`;
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error("Please sign in again.");
+      const { data: access } = await supabase.from("sourcing_users").select("user_id")
+        .eq("user_id", user.id).eq("active", true).maybeSingle();
+      if (!access) throw new Error("Sourcing access is required.");
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET)
@@ -65,6 +82,7 @@ export function ImageUploadField({
         .createSignedUrl(objectPath, 3600);
 
       if (signedError) {
+        setPreviewUrl("");
         setMessage(`ფოტო აიტვირთა, მაგრამ preview ვერ შეიქმნა: ${signedError.message}`);
       } else {
         setPreviewUrl(signedData.signedUrl);
@@ -72,14 +90,18 @@ export function ImageUploadField({
       }
 
       setPath(objectPath);
+    } catch (error) {
+      setMessage(`ატვირთვა ვერ მოხერხდა: ${error instanceof Error ? error.message : "Network error. Please retry."}`);
     } finally {
       setUploading(false);
+      setFormUploading(false);
     }
   }
 
   return (
     <div className="upload-box">
       <input type="hidden" name={name} value={path} readOnly />
+      {path && !previewUrl && <div role="status" className="small muted">ფოტოს preview მიუწვდომელია. განაახლეთ გვერდი ან გადაამოწმეთ Storage წვდომა.</div>}
 
       {previewUrl ? (
         <a href={previewUrl} target="_blank" rel="noreferrer" className="upload-preview-link">
@@ -119,7 +141,8 @@ export function ImageUploadField({
         ) : null}
       </div>
 
-      {message ? <div className="small muted">{message}</div> : null}
+      <div className="small muted">მხოლოდ ფოტოები · მაქსიმუმ 10 MB</div>
+      {message ? <div role="status" aria-live="polite" className="small muted">{message}</div> : null}
     </div>
   );
 }

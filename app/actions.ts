@@ -146,14 +146,19 @@ export async function createRequestItemAction(formData: FormData) {
       box_height_cm: numberOrNull(formData.get("box_height_cm")),
       weight_kg: numberOrNull(formData.get("weight_kg")),
       supplier_comment: clean(formData.get("supplier_comment")),
-      internal_comment: clean(formData.get("internal_comment"))
+      internal_comment: clean(formData.get("internal_comment")),
+      client_comment: clean(formData.get("client_comment"))
     })
     .select("id, product_name")
     .single();
 
-  if (!error && data) {
+  if (error || !data) return { error: `Unable to create item: ${error?.message ?? "No item returned"}` };
+
+  if (data) {
     await supabase.from("sourcing_requests").update({ updated_at: new Date().toISOString() }).eq("id", requestId);
     await addLog(requestId, data.id, "item_created", data.product_name);
+    const image = clean(formData.get("image_url"));
+    if (image && !/^https?:\/\//i.test(image)) await addLog(requestId, data.id, "item_image_uploaded", image);
   }
 
   revalidatePath(`/requests/${requestId}`);
@@ -165,7 +170,10 @@ export async function updateRequestItemAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const requestId = String(formData.get("request_id") ?? "");
 
-  const { error } = await supabase
+  const { data: previous, error: readError } = await supabase.from("sourcing_request_items").select("image_url").eq("id", id).eq("request_id", requestId).single();
+  if (readError || !previous) return { error: "Item unavailable." };
+
+  const { data: updated, error } = await supabase
     .from("sourcing_request_items")
     .update({
       product_name: clean(formData.get("product_name")),
@@ -188,9 +196,13 @@ export async function updateRequestItemAction(formData: FormData) {
       internal_comment: clean(formData.get("internal_comment")),
       client_comment: clean(formData.get("client_comment"))
     })
-    .eq("id", id);
+    .eq("id", id).eq("request_id", requestId).select("id").single();
 
-  if (!error) {
+  if (error || !updated) return { error: `Unable to save item: ${error?.message ?? "Item unavailable"}` };
+
+  if (updated) {
+    const image = clean(formData.get("image_url"));
+    if (image && image !== previous.image_url && !/^https?:\/\//i.test(image)) await addLog(requestId, id, "item_image_uploaded", image);
     await supabase.from("sourcing_requests").update({ updated_at: new Date().toISOString() }).eq("id", requestId);
     await addLog(requestId, id, "item_updated", clean(formData.get("product_name")));
   }

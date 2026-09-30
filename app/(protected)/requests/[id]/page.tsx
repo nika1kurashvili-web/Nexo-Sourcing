@@ -11,6 +11,8 @@ import { requestStatuses, supplierStatuses, supplierStatusLabel } from "@/lib/la
 import { RequestBadge } from "@/components/RequestBadge";
 import { ImageUploadField } from "@/components/ImageUploadField";
 
+import { RequestItemForm } from "@/components/RequestItemForm";
+
 const STORAGE_BUCKET = "sourcing-files";
 
 export default async function RequestDetailPage({
@@ -123,7 +125,7 @@ export default async function RequestDetailPage({
         <h2>+ ახალი ნივთი</h2>
         <hr />
 
-        <form action={createRequestItemAction} className="form-grid">
+        <RequestItemForm key={items.length} action={createRequestItemAction}>
           <input type="hidden" name="request_id" value={request.id} />
 
           <div className="form-grid three">
@@ -171,6 +173,58 @@ export default async function RequestDetailPage({
             </label>
           </div>
 
+              <div className="form-grid three">
+                <label>
+                  China Price
+                  <input
+                    name="china_price"
+                    type="number"
+                    step="0.01"
+                  />
+                </label>
+                <label>
+                  Currency
+                  <select
+                    name="currency" defaultValue="USD"
+                  >
+                    <option value="USD">USD</option>
+                    <option value="CNY">CNY</option>
+                    <option value="EUR">EUR</option>
+                    <option value="GEL">GEL</option>
+                  </select>
+                </label>
+                <label>
+                  Client Price
+                  <input
+                    name="client_price"
+                    type="number"
+                    step="0.01"
+                  />
+                </label>
+              </div>
+
+              <div className="form-grid two">
+                <label>
+                  MOQ
+                  <input
+                    name="moq"
+                    type="number"
+                    step="0.01"
+                  />
+                </label>
+                <label>
+                  წარმოების ვადა (დღე)
+                  <input
+                    name="lead_time_days"
+                    type="number"
+                    min="0"
+                  />
+                </label>
+              </div>
+
+<label>Supplier comment<textarea name="supplier_comment" /></label>
+<label>Internal comment<textarea name="internal_comment" /></label>
+<label>Client comment<textarea name="client_comment" /></label>
           <div>
             <div className="section-label">ყუთის მონაცემები</div>
             <div className="form-grid four">
@@ -201,7 +255,7 @@ export default async function RequestDetailPage({
           <button className="btn" type="submit">
             ნივთის დამატება
           </button>
-        </form>
+        </RequestItemForm>
       </div>
 
       <div className="stack">
@@ -225,7 +279,7 @@ export default async function RequestDetailPage({
               </span>
             </div>
 
-            <form action={updateRequestItemAction} className="form-grid">
+            <RequestItemForm action={updateRequestItemAction}>
               <input type="hidden" name="id" value={item.id} />
               <input type="hidden" name="request_id" value={request.id} />
 
@@ -420,6 +474,7 @@ export default async function RequestDetailPage({
                 <div className="section-label">პროდუქტის ფოტო</div>
                 <ImageUploadField
                   requestId={request.id}
+                  requestItemId={item.id}
                   initialPath={item.image_url ?? ""}
                   initialPreviewUrl={previewByItemId[item.id] ?? ""}
                 />
@@ -428,7 +483,7 @@ export default async function RequestDetailPage({
               <button className="btn" type="submit">
                 შენახვა
               </button>
-            </form>
+            </RequestItemForm>
 
             <form action={deleteRequestItemAction} style={{ marginTop: 10 }}>
               <input type="hidden" name="id" value={item.id} />
