@@ -1,164 +1,143 @@
-import {
-  scopedItem,
-  supplierScope,
-} from "@/lib/supplier-portal";
+"use client";
 
 import {
-  PRIVATE_HEADERS,
-  supplierDenied,
-} from "@/lib/supplier-http";
+  type ReactNode,
+  useRef,
+  useState,
+} from "react";
 
-export const dynamic =
-  "force-dynamic";
+export function SupplierItemAccordion({
+  token,
+  itemId,
+  itemNo,
+  productName,
+  quantity,
+  unit,
+  statusLabel,
+  initialUnread,
+  changedAt,
+  children,
+}: {
+  token: string;
+  itemId: string;
+  itemNo: number;
+  productName: string;
+  quantity: number | null;
+  unit: string | null;
+  statusLabel: string;
+  initialUnread: boolean;
+  changedAt: string | null;
+  children: ReactNode;
+}) {
+  const [unread, setUnread] =
+    useState(initialUnread);
 
-export const revalidate = 0;
+  const markingSeen = useRef(false);
 
-export async function POST(
-  request: Request,
-  {
-    params,
-  }: {
-    params: Promise<{
-      token: string;
-      itemId: string;
-    }>;
-  }
-) {
-  try {
-    const {
-      token,
-      itemId,
-    } = await params;
-
-    const body =
-      await request.json().catch(
-        () => null
-      );
-
-    const seenThrough =
-      typeof body?.seenThrough ===
-      "string"
-        ? body.seenThrough
-        : null;
-
+  async function markSeen() {
     if (
-      !seenThrough ||
-      !Number.isFinite(
-        Date.parse(seenThrough)
-      )
+      !unread ||
+      !changedAt ||
+      markingSeen.current
     ) {
-      return supplierDenied();
+      return;
     }
 
-    /*
-     * Validate token + supplier +
-     * request + item assignment.
-     */
-    const scope =
-      await supplierScope(token);
+    markingSeen.current = true;
 
-    const item =
-      await scopedItem(
-        scope,
-        itemId
-      );
-
-    /*
-     * The browser may only acknowledge
-     * exactly the Nexo update it actually
-     * received with the rendered page.
-     *
-     * If Nexo changed the item again after
-     * the supplier loaded the page, do NOT
-     * mark the newer change as seen.
-     */
-    if (
-      !item.nexo_changed_at ||
-      Date.parse(
-        item.nexo_changed_at
-      ) !==
-        Date.parse(
-          seenThrough
-        )
-    ) {
-      return new Response(
-        null,
+    try {
+      const response = await fetch(
+        `/api/supplier/${token}/items/${itemId}/seen`,
         {
-          status: 409,
-          headers:
-            PRIVATE_HEADERS,
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            seenThrough: changedAt,
+          }),
         }
       );
-    }
 
-    /*
-     * Conditional update protects against
-     * a Nexo edit occurring between the
-     * validation above and this update.
-     */
-    const {
-      data,
-      error,
-    } = await scope.db
-      .from(
-        "sourcing_request_items"
-      )
-      .update({
-        supplier_seen_at:
-          seenThrough,
-      })
-      .eq("id", itemId)
-      .eq(
-        "request_id",
-        scope.link.request_id
-      )
-      .eq(
-        "supplier_id",
-        scope.link.supplier_id
-      )
-      .eq(
-        "nexo_changed_at",
-        item.nexo_changed_at
-      )
-      .select("id")
-      .maybeSingle();
-
-    if (
-      error ||
-      !data
-    ) {
-      return new Response(
-        null,
-        {
-          status: 409,
-          headers:
-            PRIVATE_HEADERS,
-        }
-      );
-    }
-
-    /*
-     * Recheck the share link after write
-     * so revoked/expired links cannot
-     * continue normally.
-     */
-    const latest =
-      await supplierScope(token);
-
-    await scopedItem(
-      latest,
-      itemId
-    );
-
-    return new Response(
-      null,
-      {
-        status: 204,
-        headers:
-          PRIVATE_HEADERS,
+      if (response.ok) {
+        setUnread(false);
       }
-    );
-  } catch {
-    return supplierDenied();
+    } catch {
+      // Keep the unread indicator if marking as seen fails.
+    } finally {
+      markingSeen.current = false;
+    }
   }
+
+  return (
+    <details
+      className="item-card item-accordion"
+      onToggle={(event) => {
+        if (event.currentTarget.open) {
+          void markSeen();
+        }
+      }}
+    >
+      <summary className="item-summary">
+        <span className="item-summary-title">
+          {unread && (
+            <span
+              title="Updated since your last view"
+              aria-label="New update"
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                background: "#f5c542",
+                flexShrink: 0,
+                boxShadow:
+                  "0 0 0 2px rgba(245, 197, 66, 0.18)",
+              }}
+            />
+          )}
+
+          <span className="item-number">
+            ITEM-
+            {String(itemNo).padStart(
+              2,
+              "0"
+            )}
+          </span>
+
+          <span className="item-title">
+            {productName}
+          </span>
+        </span>
+
+        {quantity != null && (
+          <span className="small">
+            Quantity: {quantity}{" "}
+            {unit ?? "pcs"}
+          </span>
+        )}
+
+        <span className="badge">
+          {statusLabel}
+        </span>
+
+        <svg
+          className="item-chevron"
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </summary>
+
+      {children}
+    </details>
+  );
 }
