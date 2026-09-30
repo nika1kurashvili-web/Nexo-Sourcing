@@ -12,6 +12,7 @@ import { RequestBadge } from "@/components/RequestBadge";
 import { ImageUploadField } from "@/components/ImageUploadField";
 
 import { RequestItemForm } from "@/components/RequestItemForm";
+import { SupplierShareLinks } from "@/components/SupplierShareLinks";
 
 const STORAGE_BUCKET = "sourcing-files";
 
@@ -75,6 +76,21 @@ export default async function RequestDetailPage({
   );
 
   const previewByItemId = Object.fromEntries(previewEntries) as Record<string, string>;
+  const assignedSuppliers = new Map<string, { id: string; name: string; count: number }>();
+  for (const item of items) {
+    if (!item.supplier_id) continue;
+    const supplier = assignedSuppliers.get(item.supplier_id) ?? { id: item.supplier_id, name: item.sourcing_suppliers?.name ?? "Supplier", count: 0 };
+    supplier.count++;
+    assignedSuppliers.set(item.supplier_id, supplier);
+  }
+  // RLS still authorizes all admin reads. Missing portal migration must not break
+  // the existing request workflow.
+  const { data: supplierImages } = await supabase.from("sourcing_supplier_images")
+    .select("id,request_item_id,object_path").eq("request_id", id).eq("ready", true);
+  const supplierImagePreviews = await Promise.all((supplierImages ?? []).map(async image => {
+    const { data } = await supabase.storage.from(STORAGE_BUCKET).createSignedUrl(image.object_path, 3600);
+    return { ...image, url: data?.signedUrl };
+  }));
 
   return (
     <>
@@ -120,6 +136,8 @@ export default async function RequestDetailPage({
           </>
         )}
       </div>
+
+      <SupplierShareLinks requestId={request.id} suppliers={[...assignedSuppliers.values()]} />
 
       <div className="card" style={{ marginBottom: 18 }}>
         <h2>+ New Item</h2>
@@ -498,6 +516,13 @@ export default async function RequestDetailPage({
                 Save
               </button>
             </RequestItemForm>
+
+            {supplierImagePreviews.some(image => image.request_item_id === item.id) && <div style={{ marginTop: 14 }}>
+              <div className="section-label">Supplier Images</div>
+              <div className="upload-controls">{supplierImagePreviews.filter(image => image.request_item_id === item.id).map(image => image.url ?
+                <a key={image.id} href={image.url} target="_blank" rel="noopener noreferrer" className="upload-preview-link"><img src={image.url} className="upload-preview" alt="Supplier uploaded image" /></a>
+                : <span key={image.id} className="small muted">Image preview unavailable.</span>)}</div>
+            </div>}
 
             <form action={deleteRequestItemAction} style={{ marginTop: 10 }}>
               <input type="hidden" name="id" value={item.id} />

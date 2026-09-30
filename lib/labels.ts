@@ -27,6 +27,10 @@ export function supplierStatusLabel(value: string) {
 }
 
 const activityLabels: Record<string, string> = {
+  supplier_link_created: "Supplier Share Link Created",
+  supplier_link_revoked: "Supplier Share Link Revoked",
+  supplier_item_updated: "Supplier Updated Item",
+  supplier_image_uploaded: "Supplier Uploaded Image",
   request_created: "Request Created",
   request_status_changed: "Request Status Changed",
   item_created: "Item Added",
