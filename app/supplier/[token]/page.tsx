@@ -1,3 +1,4 @@
+import { hasUnreadUpdate } from "@/lib/item-unread";
 import {
   INVALID_LINK,
   readSupplierPortal,
@@ -108,19 +109,7 @@ export default async function SupplierPortal({
                     url: `/api/supplier/${token}/items/${item.id}/images/${image.id}`,
                   }));
 
-              const unread =
-                Boolean(
-                  item.nexo_changed_at &&
-                    (
-                      !item.supplier_seen_at ||
-                      Date.parse(
-                        item.nexo_changed_at
-                      ) >
-                        Date.parse(
-                          item.supplier_seen_at
-                        )
-                    )
-                );
+              const unread = hasUnreadUpdate(item.nexo_changed_at, item.supplier_seen_at);
 
               return (
                 <SupplierItemAccordion

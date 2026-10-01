@@ -1,3 +1,4 @@
+import { hasUnreadUpdate } from "@/lib/item-unread";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -761,18 +762,7 @@ export default async function RequestDetailPage({
                 <NexoUnreadMarker
                   requestId={request.id}
                   itemId={item.id}
-                  initialUnread={Boolean(
-                    item.supplier_changed_at &&
-                      (
-                        !item.nexo_seen_at ||
-                        Date.parse(
-                          item.supplier_changed_at
-                        ) >
-                          Date.parse(
-                            item.nexo_seen_at
-                          )
-                      )
-                  )}
+                  initialUnread={hasUnreadUpdate(item.supplier_changed_at, item.nexo_seen_at)}
                   changedAt={
                     item.supplier_changed_at ??
                     null

@@ -5,6 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const ts = require('typescript');
 const { PGlite } = require('@electric-sql/pglite');
+// Match PostgREST's ISO strings without losing PostgreSQL microseconds.
+const dateParsers = { parsers: { 1184: value => value.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00') } };
 
 // Run the actual TypeScript server modules against PostgreSQL, with only the
 // Supabase HTTP transport and Storage replaced. No production credentials/data.
@@ -64,7 +66,7 @@ function adapter(pg) {
               const assignments = Object.entries(update).map(([key, value]) => { values.push(value); return `"${key}"=$${values.length}`; });
               sql = `update public."${table}" set ${assignments.join(',')}${where} returning ${columns}`;
             } else sql = `select ${columns} from public."${table}"${where}${sort}${maximum}`;
-            const { rows } = await pg.query(sql, values);
+            const { rows } = await pg.query(sql, values, dateParsers);
             if (singular && (rows.length > 1 || (strict && !rows.length))) return resolve({ data: null, error: new Error('Invalid row count') });
             resolve({ data: singular ? rows[0] ?? null : rows, error: null });
           } catch (error) { resolve({ data: null, error }); }
@@ -117,8 +119,11 @@ test('supplier portal security boundaries', async t => {
       item_no integer, product_name text, quantity numeric, unit text, specifications text, image_url text,
       china_price numeric(10,2), currency text, moq numeric, lead_time_days integer, box_length_cm numeric(10,2),
       box_width_cm numeric(10,2), box_height_cm numeric(10,2), weight_kg numeric(10,3), supplier_comment text,
-      supplier_status supplier_status, client_price numeric, internal_comment text, client_comment text
+      supplier_status supplier_status, client_price numeric, internal_comment text, client_comment text,
+      nexo_changed_at timestamptz, supplier_seen_at timestamptz, supplier_changed_at timestamptz, nexo_seen_at timestamptz
     );
+    create table public.sourcing_request_item_images(id uuid primary key default gen_random_uuid(),
+      request_item_id uuid references sourcing_request_items(id), object_path text, sort_order integer, created_by uuid);
     create table public.sourcing_activity_log(id uuid default gen_random_uuid(), request_id uuid, request_item_id uuid, user_id uuid not null, action text, details text);
     create table storage.buckets(id text primary key, public boolean, file_size_limit bigint, allowed_mime_types text[]);
     insert into storage.buckets values ('sourcing-files',false,null,null);
@@ -134,6 +139,7 @@ test('supplier portal security boundaries', async t => {
     ('${ids.otherRequestItem}','${ids.otherRequest}','${ids.supplier}',1,'Other request product',1,'pcs','Private','sent','INTERNAL SECRET','CLIENT SECRET',999);
   `);
   await pg.exec(fs.readFileSync('supabase/migrations/20260930_supplier_portal.sql', 'utf8'));
+  await pg.exec(fs.readFileSync('supabase/migrations/20261001_item_unread.sql', 'utf8'));
   const existingCreated = (await pg.query('select created_at from sourcing_requests where id=$1', [ids.request])).rows[0].created_at;
   const deadlineMigration = fs.readFileSync('supabase/migrations/20260930_request_deadlines.sql', 'utf8');
   await pg.exec(deadlineMigration);
@@ -147,6 +153,14 @@ test('supplier portal security boundaries', async t => {
   const imageApi = load('app/api/supplier/[token]/items/[itemId]/images/[imageId]/route.ts');
   const shareActions = load('app/share-link-actions.ts');
   const requestActions = load('app/actions.ts');
+  const supplierSeen = load('app/api/supplier/[token]/items/[itemId]/seen/route.ts');
+  const nexoSeen = load('app/api/requests/[requestId]/items/[itemId]/seen/route.ts');
+  const unread = load('lib/item-unread.ts');
+  const versions = async () => (await pg.query('select nexo_changed_at,supplier_seen_at,supplier_changed_at,nexo_seen_at from sourcing_request_items where id=$1', [ids.item], dateParsers)).rows[0];
+  const seen = (handler, params, seenThrough) => handler.POST(new Request('https://sourcing.nexo.ge/api/seen', {
+    method: 'POST', headers: { origin: 'https://sourcing.nexo.ge', 'content-type': 'application/json' },
+    body: JSON.stringify({ seenThrough })
+  }), { params: Promise.resolve(params) });
   const insertLink = async (raw, request = ids.request, supplier = ids.supplier, expires = null) => {
     const { rows } = await pg.query(`insert into sourcing_supplier_share_links(request_id,supplier_id,token_hash,created_by,expires_at) values($1,$2,$3,$4,$5) returning id`, [request, supplier, portal.hashToken(raw), ids.user, expires]);
     return rows[0].id;
@@ -165,7 +179,8 @@ test('supplier portal security boundaries', async t => {
     assert.deepEqual(result.items.map(item => item.id), [ids.item]);
     assert.equal(result.requestNo, 'REQ-1');
     const serialized = JSON.stringify(result);
-    for (const forbidden of ['client_price','client_comment','internal_comment','SECRET','Other supplier product','Other request product','company_name','created_by','token_hash','created_at','deadline_at','2026-12-31']) assert.ok(!serialized.includes(forbidden), forbidden);
+    for (const forbidden of ['client_price','client_comment','internal_comment','SECRET','Other supplier product','Other request product','company_name','created_by','token_hash','supplier_changed_at','nexo_seen_at']) assert.ok(!serialized.includes(forbidden), forbidden);
+    assert.equal(new Date(result.deadlineAt).toISOString(), '2026-12-31T14:00:00.000Z');
   });
   await t.test('invalid/missing tokens and tampered item IDs reveal nothing', async () => {
     for (const raw of ['', 'bad', 'b'.repeat(64)]) await assert.rejects(portal.readSupplierPortal(raw), /invalid or no longer active/);
@@ -202,7 +217,7 @@ test('supplier portal security boundaries', async t => {
     assert.equal((await portal.readSupplierPortal(token)).items.length, 2);
     await pg.query('update sourcing_request_items set supplier_id=$1 where request_id=$2', [ids.otherSupplier, ids.request]);
     const empty = await portal.readSupplierPortal(token);
-    assert.deepEqual(empty, { items: [], images: [], requestNo: null, supplierName: null });
+    assert.deepEqual(empty, { items: [], images: [], referenceImages: [], requestNo: null, supplierName: null, createdAt: null, deadlineAt: null });
     assert.equal((await post(ids.item, { operation: 'response', response })).status, 404);
     assert.equal((await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: 16 })).status, 404);
     await pg.query('update sourcing_request_items set supplier_id=$1 where id=$2', [ids.supplier, ids.item]);
@@ -254,7 +269,9 @@ test('supplier portal security boundaries', async t => {
       return new Response(objects.get(String(url).replace('https://storage.test/', '')));
     };
     try {
+      const beforeUpload = await versions();
       const prepare = await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: png.size });
+      assert.deepEqual(await versions(), beforeUpload, 'Preparing an upload must not notify');
       assert.equal(prepare.status, 200);
       const capability = await prepare.json();
       assert.equal(capability.path, issuedPath);
@@ -262,6 +279,7 @@ test('supplier portal security boundaries', async t => {
       objects.set(capability.path, png);
       assert.equal((await post(ids.otherSupplierItem, { operation: 'finish_image', imageId: capability.id })).status, 404);
       assert.equal((await post(ids.item, { operation: 'finish_image', imageId: capability.id })).status, 200);
+      assert.ok(unread.timestampMicros((await versions()).supplier_changed_at) > unread.timestampMicros(beforeUpload.supplier_changed_at), 'Completed upload must notify Nexo');
       assert.ok((await portal.readSupplierPortal(token)).images.some(image => image.id === capability.id));
       const params = { token, itemId: ids.item, imageId: capability.id };
       const download = await imageApi.GET(new Request('https://sourcing.nexo.ge'), { params: Promise.resolve(params) });
@@ -281,9 +299,93 @@ test('supplier portal security boundaries', async t => {
       assert.equal((await pg.query('select image_url from sourcing_request_items where id=$1', [ids.item])).rows[0].image_url, null);
     } finally { transport.storage = originalStorage; global.fetch = originalFetch; }
   });
+  await t.test('Nexo visible edits and reference edits stamp versions; private edits and reads do not acknowledge', async () => {
+    await pg.query("select set_config('test.uid',$1,false)", [ids.user]);
+    try {
+      await pg.query("update sourcing_request_items set product_name='Updated kettle' where id=$1", [ids.item]);
+      const first = await versions();
+      assert.ok(first.nexo_changed_at);
+      await pg.query("update sourcing_request_items set internal_comment='Private edit', client_price=123 where id=$1", [ids.item]);
+      assert.deepEqual(await versions(), first);
+      const gallery = (await pg.query("insert into sourcing_request_item_images(request_item_id,object_path,sort_order) values($1,'reference',0) returning id", [ids.item])).rows[0].id;
+      const added = await versions();
+      assert.ok(unread.timestampMicros(added.nexo_changed_at) > unread.timestampMicros(first.nexo_changed_at));
+      await pg.query('update sourcing_request_item_images set sort_order=1 where id=$1', [gallery]);
+      const reordered = await versions();
+      assert.ok(unread.timestampMicros(reordered.nexo_changed_at) > unread.timestampMicros(added.nexo_changed_at));
+      await pg.query('delete from sourcing_request_item_images where id=$1', [gallery]);
+      assert.ok(unread.timestampMicros((await versions()).nexo_changed_at) > unread.timestampMicros(reordered.nexo_changed_at));
+    } finally { await pg.query("select set_config('test.uid','',false)"); }
+    const before = await versions();
+    await portal.readSupplierPortal(token);
+    assert.deepEqual(await versions(), before);
+  });
+  await t.test('supplier seen persists exact version, rejects stale microseconds and both scope violations', async () => {
+    const params = { token, itemId: ids.item };
+    const stamp = '2026-10-01T12:00:00.123456+00:00';
+    await pg.query('update sourcing_request_items set nexo_changed_at=$1,supplier_seen_at=null where id=$2', [stamp, ids.item]);
+    assert.equal((await seen(supplierSeen, params, stamp)).status, 200);
+    let v = await versions();
+    assert.equal(unread.hasUnreadUpdate(v.nexo_changed_at, v.supplier_seen_at), false);
+    const newer = '2026-10-01T12:00:00.123457+00:00';
+    await pg.query('update sourcing_request_items set nexo_changed_at=$1 where id=$2', [newer, ids.item]);
+    assert.equal((await seen(supplierSeen, params, stamp)).status, 409);
+    v = await versions();
+    assert.equal(unread.hasUnreadUpdate(v.nexo_changed_at, v.supplier_seen_at), true);
+    for (const itemId of [ids.otherRequestItem, ids.otherSupplierItem]) assert.equal((await seen(supplierSeen, { token, itemId }, newer)).status, 404);
+    assert.equal((await seen(supplierSeen, { token: 'b'.repeat(64), itemId: ids.item }, newer)).status, 404);
+    assert.equal((await seen(supplierSeen, params, newer)).status, 200);
+  });
+  await t.test('every response field and repeated save stamps supplier version; Nexo seen is exact and authenticated', async () => {
+    const params = { requestId: ids.request, itemId: ids.item };
+    const changed = { ...response };
+    for (const key of Object.keys(response)) {
+      const before = await versions();
+      changed[key] = key === 'supplier_comment' ? 'New comment' : key === 'currency' ? 'CNY' : key === 'supplier_status' ? 'waiting' : '2';
+      assert.equal((await post(ids.item, { operation: 'response', response: changed })).status, 200, key);
+      const after = await versions();
+      assert.ok(unread.timestampMicros(after.supplier_changed_at) > unread.timestampMicros(before.supplier_changed_at), key);
+      assert.equal(after.nexo_changed_at, before.nexo_changed_at, 'Supplier write must not echo to supplier');
+      assert.equal(unread.hasUnreadUpdate(after.supplier_changed_at, after.nexo_seen_at), true);
+      assert.equal((await seen(nexoSeen, params, after.supplier_changed_at)).status, 200);
+      const acknowledged = await versions();
+      assert.equal(unread.hasUnreadUpdate(acknowledged.supplier_changed_at, acknowledged.nexo_seen_at), false);
+    }
+    const before = await versions();
+    assert.equal((await post(ids.item, { operation: 'response', response: changed })).status, 200);
+    assert.ok(unread.timestampMicros((await versions()).supplier_changed_at) > unread.timestampMicros(before.supplier_changed_at));
+    await pg.query("update sourcing_request_items set supplier_changed_at='2026-10-01T12:00:00.123457Z' where id=$1", [ids.item]);
+    assert.equal((await seen(nexoSeen, params, '2026-10-01T12:00:00.123456Z')).status, 409);
+    // A supplier save between the Nexo route's SELECT and UPDATE must fail its CAS.
+    const originalFrom = transport.from;
+    transport.from = table => {
+      const builder = originalFrom(table);
+      const originalUpdate = builder.update;
+      builder.update = function (values) {
+        if (table === 'sourcing_request_items' && values.nexo_seen_at) {
+          const originalThen = this.then;
+          this.then = async function (resolve, reject) {
+            await pg.query("update sourcing_request_items set supplier_changed_at='2026-10-01T12:00:00.123458Z' where id=$1", [ids.item]);
+            return originalThen.call(this, resolve, reject);
+          };
+        }
+        return originalUpdate.call(this, values);
+      };
+      return builder;
+    };
+    const beforeRace = await versions();
+    try { assert.equal((await seen(nexoSeen, params, '2026-10-01T12:00:00.123457Z')).status, 409); }
+    finally { transport.from = originalFrom; }
+    assert.equal((await versions()).nexo_seen_at, beforeRace.nexo_seen_at);
+    assert.equal((await seen(nexoSeen, { ...params, requestId: ids.otherRequest }, '2026-10-01T12:00:00.123457Z')).status, 404);
+    staffAccess = false;
+    try { assert.equal((await seen(nexoSeen, params, '2026-10-01T12:00:00.123457Z')).status, 401); }
+    finally { staffAccess = true; }
+  });
   await t.test('revocation blocks reads, updates, images and finalization; token cannot reactivate', async () => {
     await pg.query('update sourcing_supplier_share_links set active=false,revoked_at=now() where id=$1', [linkId]);
     await assert.rejects(portal.readSupplierPortal(token), /invalid or no longer active/);
+    assert.equal((await seen(supplierSeen, { token, itemId: ids.item }, '2026-10-01T12:00:00Z')).status, 404);
     assert.equal((await post(ids.item, { operation: 'response', response })).status, 404);
     assert.equal((await post(ids.item, { operation: 'prepare_image', mime: 'image/png', size: 16 })).status, 404);
     assert.equal((await post(ids.item, { operation: 'finish_image', imageId: ids.image })).status, 404);
@@ -298,6 +400,7 @@ test('supplier portal security boundaries', async t => {
     const expired = 'd'.repeat(64);
     await insertLink(expired, ids.otherRequest, ids.supplier, '2000-01-01T00:00:00Z');
     await assert.rejects(portal.readSupplierPortal(expired), /invalid or no longer active/);
+    assert.equal((await seen(supplierSeen, { token: expired, itemId: ids.otherRequestItem }, '2026-10-01T12:00:00Z')).status, 404);
   });
   await t.test('admin creation/revocation requires staff, stores hashes only, logs events, and replaces tokens', async () => {
     const previousKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

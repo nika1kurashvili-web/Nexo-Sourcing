@@ -1,10 +1,7 @@
 "use client";
 
-import {
-  type ReactNode,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode } from "react";
+import { useItemSeen } from "@/components/useItemSeen";
 
 export function SupplierItemAccordion({
   token,
@@ -29,47 +26,9 @@ export function SupplierItemAccordion({
   changedAt: string | null;
   children: ReactNode;
 }) {
-  const [unread, setUnread] =
-    useState(initialUnread);
-
-  const markingSeen = useRef(false);
-
-  async function markSeen() {
-    if (
-      !unread ||
-      !changedAt ||
-      markingSeen.current
-    ) {
-      return;
-    }
-
-    markingSeen.current = true;
-
-    try {
-      const response = await fetch(
-        `/api/supplier/${token}/items/${itemId}/seen`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-          body: JSON.stringify({
-            seenThrough: changedAt,
-          }),
-        }
-      );
-
-      if (response.ok) {
-        setUnread(false);
-      }
-    } catch {
-      // Keep the unread indicator if marking as seen fails.
-    } finally {
-      markingSeen.current = false;
-    }
-  }
+  const { unread, markSeen } = useItemSeen(
+    `/api/supplier/${token}/items/${itemId}/seen`, changedAt, initialUnread
+  );
 
   return (
     <details

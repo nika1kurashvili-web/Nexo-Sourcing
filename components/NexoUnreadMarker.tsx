@@ -3,8 +3,8 @@
 import {
   useEffect,
   useRef,
-  useState,
 } from "react";
+import { useItemSeen } from "@/components/useItemSeen";
 
 export function NexoUnreadMarker({
   requestId,
@@ -17,94 +17,17 @@ export function NexoUnreadMarker({
   initialUnread: boolean;
   changedAt: string | null;
 }) {
-  const [unread, setUnread] =
-    useState(initialUnread);
-
-  const markerRef =
-    useRef<HTMLSpanElement>(null);
-
-  const busy = useRef(false);
-
+  const { unread, markSeen } = useItemSeen(
+    `/api/requests/${requestId}/items/${itemId}/seen`, changedAt, initialUnread
+  );
+  const markerRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    const marker =
-      markerRef.current;
-
-    const found =
-      marker?.closest("details");
-
-    if (
-      !(found instanceof HTMLDetailsElement)
-    ) {
-      return;
-    }
-
-    const details: HTMLDetailsElement =
-      found;
-
-    async function markSeen() {
-      if (
-        !details.open ||
-        !unread ||
-        !changedAt ||
-        busy.current
-      ) {
-        return;
-      }
-
-      busy.current = true;
-
-      try {
-        const response =
-          await fetch(
-            `/api/requests/${requestId}/items/${itemId}/seen`,
-            {
-              method: "POST",
-              cache: "no-store",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify({
-                seenThrough:
-                  changedAt,
-              }),
-            }
-          );
-
-        if (response.ok) {
-          setUnread(false);
-        }
-      } catch {
-        // Keep the yellow dot if marking
-        // as seen fails.
-      } finally {
-        busy.current = false;
-      }
-    }
-
-    function handleToggle() {
-      if (details.open) {
-        void markSeen();
-      }
-    }
-
-    details.addEventListener(
-      "toggle",
-      handleToggle
-    );
-
-    return () => {
-      details.removeEventListener(
-        "toggle",
-        handleToggle
-      );
-    };
-  }, [
-    requestId,
-    itemId,
-    unread,
-    changedAt,
-  ]);
+    const details = markerRef.current?.closest("details");
+    if (!(details instanceof HTMLDetailsElement)) return;
+    const handleToggle = () => { if (details.open) void markSeen(); };
+    details.addEventListener("toggle", handleToggle);
+    return () => details.removeEventListener("toggle", handleToggle);
+  }, [markSeen]);
 
   return (
     <span
