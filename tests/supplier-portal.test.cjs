@@ -113,6 +113,8 @@ test('supplier portal security boundaries', async t => {
     create table public.sourcing_requests(id uuid primary key default gen_random_uuid(), request_no text default 'REQ-NEW',
       created_at timestamptz not null default now(), updated_at timestamptz default now(), company_name text,
       company_id uuid, title text, client_contact text, notes text, created_by uuid, status text default 'new');
+    create table public.sourcing_companies(id uuid primary key default gen_random_uuid(), name text,
+      contact_name text, phone text, email text, notes text, active boolean default true);
     create table public.sourcing_suppliers(id uuid primary key default gen_random_uuid(), name text,
       contact_name text, phone text, email text, wechat text, notes text);
     create type supplier_status as enum ('not_sent','sent','waiting','answered','not_found');
@@ -439,6 +441,49 @@ test('supplier portal security boundaries', async t => {
       if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
       else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
     }
+  });
+  await t.test('company creation and editing preserve access, scope, field allow-list and validation', async () => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ name: 'Company A', contact_name: 'Linda', phone: '123', email: 'linda@example.com', notes: 'Notes' })) form.set(key, value);
+    staffAccess = false;
+    try { await assert.rejects(requestActions.createCompanyAction(form), /Access denied/); }
+    finally { staffAccess = true; }
+    await requestActions.createCompanyAction(form);
+    const read = async () => (await pg.query('select * from sourcing_companies order by name')).rows;
+    const company = (await read())[0];
+    assert.equal(company.name, 'Company A');
+    assert.equal(company.contact_name, 'Linda');
+    form.set('name', 'Company B'); await requestActions.createCompanyAction(form);
+    const before = await read();
+    form.set('id', company.id); form.set('name', ' Updated company '); form.set('contact_name', ' John ');
+    form.set('phone', '456'); form.set('email', 'john@example.com'); form.set('notes', 'Updated notes');
+    form.set('active', 'false'); form.set('unexpected', 'ignored');
+    staffAccess = false;
+    try { await assert.rejects(requestActions.updateCompanyAction(form), /Access denied/); }
+    finally { staffAccess = true; }
+    assert.deepEqual(await read(), before);
+    revalidatedPaths.length = 0;
+    assert.deepEqual(await requestActions.updateCompanyAction(form), { success: true });
+    assert.deepEqual(revalidatedPaths, [['/companies'], ['/requests', 'layout'], ['/dashboard']]);
+    const after = await read();
+    assert.deepEqual(after.find(c => c.id !== company.id), before.find(c => c.id !== company.id));
+    assert.deepEqual(after.find(c => c.id === company.id), { id: company.id, name: 'Updated company', contact_name: 'John', phone: '456', email: 'john@example.com', notes: 'Updated notes', active: true });
+    form.set('name', ' '); assert.match((await requestActions.updateCompanyAction(form)).error, /name is required/);
+    form.set('name', 'Updated company'); form.set('email', 'invalid');
+    assert.match((await requestActions.updateCompanyAction(form)).error, /email/);
+    assert.deepEqual(await read(), after);
+    form.set('email', ''); form.set('id', 'invalid');
+    assert.match((await requestActions.updateCompanyAction(form)).error, /Invalid company/);
+    form.set('id', ids.outsider); assert.match((await requestActions.updateCompanyAction(form)).error, /not found/);
+    form.set('id', company.id);
+    for (const field of ['contact_name', 'phone', 'notes']) form.set(field, '');
+    assert.deepEqual(await requestActions.updateCompanyAction(form), { success: true });
+    const cleared = (await read()).find(c => c.id === company.id);
+    for (const field of ['contact_name', 'phone', 'email', 'notes']) assert.equal(cleared[field], null);
+    const originalFrom = transport.from;
+    transport.from = () => { throw new Error('Private database details'); };
+    try { assert.deepEqual(await requestActions.updateCompanyAction(form), { error: 'Unable to save company. Please try again.' }); }
+    finally { transport.from = originalFrom; }
   });
   await t.test('supplier edits require access, target one supplier, validate input and allow only expected fields', async () => {
     const read = async () => (await pg.query('select * from sourcing_suppliers order by id')).rows;
