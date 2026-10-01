@@ -439,6 +439,36 @@ export async function createSupplierAction(
   revalidatePath("/suppliers");
 }
 
+export async function updateSupplierAction(formData: FormData): Promise<{ error: string } | { success: true }> {
+  const { supabase } = await requireSourcingAccess();
+  const id = formData.get("id");
+  if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return { error: "Invalid supplier." };
+  }
+  const fields = ["name", "contact_name", "phone", "email", "wechat", "notes"] as const;
+  const values = {} as Record<typeof fields[number], string | null>;
+  for (const field of fields) {
+    const value = formData.get(field);
+    if (value !== null && typeof value !== "string") return { error: "Invalid supplier details." };
+    values[field] = clean(value);
+  }
+  if (!values.name) return { error: "Supplier name is required." };
+  if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
+    return { error: "Enter a valid email address." };
+  }
+  try {
+    const { data, error } = await supabase.from("sourcing_suppliers")
+      .update(values).eq("id", id).select("id").maybeSingle();
+    if (error) return { error: "Unable to save supplier. Please try again." };
+    if (!data) return { error: "Supplier not found or you do not have permission to edit it." };
+  } catch {
+    return { error: "Unable to save supplier. Please try again." };
+  }
+  revalidatePath("/suppliers");
+  revalidatePath("/requests", "layout");
+  return { success: true };
+}
+
 export async function createRequestAction(
   formData: FormData
 ) {

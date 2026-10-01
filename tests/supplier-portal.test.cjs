@@ -12,6 +12,7 @@ const dateParsers = { parsers: { 1184: value => value.replace(' ', 'T').replace(
 // Supabase HTTP transport and Storage replaced. No production credentials/data.
 let transport;
 let staffAccess = true;
+const revalidatedPaths = [];
 const modules = new Map();
 function load(relative) {
   const file = path.resolve(relative);
@@ -21,7 +22,7 @@ function load(relative) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
   }).outputText;
   const localRequire = name => {
-    if (name === 'server-only' || name === 'next/cache') return { revalidatePath() {} };
+    if (name === 'server-only' || name === 'next/cache') return { revalidatePath(...args) { revalidatedPaths.push(args); } };
     if (name === 'next/navigation') return { redirect: location => { throw Object.assign(new Error('redirect'), { location }); } };
     if (name === '@/lib/supabase/server') return { createClient: async () => transport };
     if (name === '@/lib/supabase/admin') return { createAdminClient: () => transport };
@@ -112,7 +113,8 @@ test('supplier portal security boundaries', async t => {
     create table public.sourcing_requests(id uuid primary key default gen_random_uuid(), request_no text default 'REQ-NEW',
       created_at timestamptz not null default now(), updated_at timestamptz default now(), company_name text,
       company_id uuid, title text, client_contact text, notes text, created_by uuid, status text default 'new');
-    create table public.sourcing_suppliers(id uuid primary key, name text);
+    create table public.sourcing_suppliers(id uuid primary key default gen_random_uuid(), name text,
+      contact_name text, phone text, email text, wechat text, notes text);
     create type supplier_status as enum ('not_sent','sent','waiting','answered','not_found');
     create table public.sourcing_request_items(
       id uuid primary key, request_id uuid references sourcing_requests, supplier_id uuid references sourcing_suppliers,
@@ -132,7 +134,7 @@ test('supplier portal security boundaries', async t => {
     insert into auth.users values ('${ids.user}'), ('${ids.outsider}');
     insert into sourcing_users values ('${ids.user}',true);
     insert into sourcing_requests(id,request_no,company_name) values ('${ids.request}','REQ-1','SECRET COMPANY'),('${ids.otherRequest}','REQ-2','OTHER COMPANY');
-    insert into sourcing_suppliers values ('${ids.supplier}','Supplier A'),('${ids.otherSupplier}','Supplier B');
+    insert into sourcing_suppliers(id,name) values ('${ids.supplier}','Supplier A'),('${ids.otherSupplier}','Supplier B');
     insert into sourcing_request_items(id,request_id,supplier_id,item_no,product_name,quantity,unit,specifications,supplier_status,internal_comment,client_comment,client_price)
     values ('${ids.item}','${ids.request}','${ids.supplier}',1,'Kettle',10,'pcs','Steel','not_sent','INTERNAL SECRET','CLIENT SECRET',999),
     ('${ids.otherSupplierItem}','${ids.request}','${ids.otherSupplier}',2,'Other supplier product',1,'pcs','Private','sent','INTERNAL SECRET','CLIENT SECRET',999),
@@ -437,6 +439,45 @@ test('supplier portal security boundaries', async t => {
       if (previousKey === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
       else process.env.SUPABASE_SERVICE_ROLE_KEY = previousKey;
     }
+  });
+  await t.test('supplier edits require access, target one supplier, validate input and allow only expected fields', async () => {
+    const read = async () => (await pg.query('select * from sourcing_suppliers order by id')).rows;
+    const before = await read();
+    const form = new FormData();
+    for (const [key, value] of Object.entries({ id: ids.supplier, name: ' Updated supplier ', contact_name: ' Linda ',
+      phone: '12345', email: 'linda@example.com', wechat: 'linda', notes: 'Updated notes', active: 'false', token_hash: 'injected' })) form.set(key, value);
+    staffAccess = false;
+    try { await assert.rejects(requestActions.updateSupplierAction(form), /Access denied/); }
+    finally { staffAccess = true; }
+    assert.deepEqual(await read(), before);
+    revalidatedPaths.length = 0;
+    assert.deepEqual(await requestActions.updateSupplierAction(form), { success: true });
+    const after = await read();
+    assert.deepEqual(after.find(s => s.id === ids.otherSupplier), before.find(s => s.id === ids.otherSupplier));
+    assert.deepEqual(after.find(s => s.id === ids.supplier), { id: ids.supplier, name: 'Updated supplier', contact_name: 'Linda',
+      phone: '12345', email: 'linda@example.com', wechat: 'linda', notes: 'Updated notes' });
+    assert.deepEqual(revalidatedPaths, [['/suppliers'], ['/requests', 'layout']]);
+    form.set('name', '  ');
+    assert.match((await requestActions.updateSupplierAction(form)).error, /name is required/);
+    form.set('name', 'Updated supplier'); form.set('email', 'invalid');
+    assert.match((await requestActions.updateSupplierAction(form)).error, /email/);
+    assert.deepEqual(await read(), after);
+    form.set('email', ''); form.set('id', 'invalid');
+    assert.match((await requestActions.updateSupplierAction(form)).error, /Invalid supplier/);
+    form.set('id', ids.outsider);
+    assert.match((await requestActions.updateSupplierAction(form)).error, /not found/);
+    form.set('id', ids.supplier);
+    for (const field of ['contact_name', 'phone', 'wechat', 'notes']) form.set(field, '');
+    assert.deepEqual(await requestActions.updateSupplierAction(form), { success: true });
+    const cleared = (await read()).find(s => s.id === ids.supplier);
+    for (const field of ['contact_name', 'phone', 'email', 'wechat', 'notes']) assert.equal(cleared[field], null);
+    const originalFrom = transport.from;
+    transport.from = () => { throw new Error('Private database details'); };
+    try { assert.deepEqual(await requestActions.updateSupplierAction(form), { error: 'Unable to save supplier. Please try again.' }); }
+    finally { transport.from = originalFrom; }
+    const create = new FormData(); create.set('name', 'New supplier still works');
+    await requestActions.createSupplierAction(create);
+    assert.ok((await read()).some(s => s.name === 'New supplier still works'));
   });
   await t.test('authenticated request deadlines persist, clear, preserve creation/status, and reject invalid input', async () => {
     const form = new FormData(); form.set('id', ids.request); form.set('deadline_at', '2026-10-05T18:42');
