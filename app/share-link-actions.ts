@@ -30,7 +30,8 @@ export async function createSupplierLink(requestId: string, supplierId: string, 
   await supabase.from("sourcing_activity_log").insert({ request_id: requestId, user_id: user.id,
     action: "supplier_link_created", details: `Supplier share link created (expires ${expiresAt}).` });
   revalidatePath(`/requests/${requestId}`);
-  return { id: data.id as string, url: `https://sourcing.nexo.ge/supplier/${token}`, expiresAt };
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://sourcing.nexo.ge").replace(/\/+$/, "");
+  return { id: data.id as string, url: `${siteUrl}/supplier/${token}`, expiresAt };
 }
 
 export async function revokeSupplierLink(requestId: string, supplierId: string, linkId: string) {

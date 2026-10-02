@@ -15,10 +15,12 @@ export function SupplierSession({ token, children }: { token: string; children: 
       try {
         const result = await fetch(`/api/supplier/${token}`, { cache: "no-store", referrerPolicy: "no-referrer" });
         if (!disposed) {
-          setUnavailable(!result.ok);
-          if (result.ok) router.refresh();
+          // Only an explicit "link invalid" answer (404) hides the page. Network
+          // errors and temporary server errors must not destroy a half-filled form.
+          if (result.status === 404) setUnavailable(true);
+          else if (result.ok) { setUnavailable(false); router.refresh(); }
         }
-      } catch { if (!disposed) setUnavailable(true); }
+      } catch { /* offline or temporary failure: keep the form, retry on next check */ }
       finally { checking = false; }
     }
     const interval = setInterval(() => void check(), 30000);

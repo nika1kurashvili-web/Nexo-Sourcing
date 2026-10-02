@@ -46,7 +46,7 @@ export function SupplierResponseForm({ token, itemId, response, images }: {
   }
 
   return <div className="form-grid">
-    <form onSubmit={async event => {
+    <form key={JSON.stringify(response)} onSubmit={async event => {
       event.preventDefault(); if (busy) return;
       const form = new FormData(event.currentTarget);
       const values = Object.fromEntries(RESPONSE_FIELDS.map(key => [key, form.get(key)]));

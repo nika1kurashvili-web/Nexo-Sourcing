@@ -843,6 +843,7 @@ export default async function RequestDetailPage({
 
             <div className="item-content">
               <RequestItemForm
+                key={`${item.id}:${item.nexo_changed_at ?? ""}:${item.supplier_changed_at ?? ""}`}
                 action={
                   updateRequestItemAction
                 }

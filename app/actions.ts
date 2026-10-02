@@ -94,7 +94,11 @@ function parseReferenceImagePaths(
       /^https?:\/\//i.test(path) ||
       !path.startsWith(
         `requests/${requestId}/`
-      )
+      ) ||
+      path.split("/").some(
+        (part) => part === ".." || part === "."
+      ) ||
+      path.includes("/supplier/")
     ) {
       throw new Error(
         "Invalid reference image path."
@@ -1422,7 +1426,8 @@ export async function deleteRequestItemAction(
         "sourcing_request_items"
       )
       .delete()
-      .eq("id", id);
+      .eq("id", id)
+      .eq("request_id", requestId);
 
   if (!error) {
     await addLog(
