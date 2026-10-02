@@ -17,7 +17,7 @@ The SQL creates two tables: share links and separate supplier image records. Sup
 
 - Each row represents a supplier assigned to this request, with the current assigned-item count. Existing active links remain revocable even if no items are assigned.
 - Choose an expiry of 7, 30, or 90 days and select **Create Share Link**. There is at most one active link per request/supplier pair. An expired link is retired automatically before replacement.
-- **Copy Link**, **Open**, and a selectable URL appear immediately after creation. Copy/save the URL before refreshing or leaving: only its SHA-256 hash is stored, so an existing URL cannot be retrieved later. No raw token is saved to local storage or activity logs.
+- **Copy Link**, **Open**, and a selectable URL appear after creation and stay visible on later visits, so a link never needs to be revoked just to see it again. The token is stored AES-256-GCM encrypted (`token_encrypted`, key derived from `SHARE_LINK_ENCRYPTION_KEY` or, if unset, `SUPABASE_SERVICE_ROLE_KEY`) and is readable only by the server after the staff access check; the SHA-256 hash is still what authorizes portal requests. Run `supabase/migrations/20261002_share_link_token.sql` once to enable this. Links created before it cannot be shown (revoke and recreate once). Changing the encryption secret makes stored links unreadable. No raw token is saved to local storage or activity logs.
 - **Revoke** asks for confirmation and permanently disables access. Request items and images are not deleted. Create a new link to get a new random token; the old link is never reactivated.
 - Share links are bearer credentials. Anyone receiving a forwarded link can respond for that supplier until expiry/revocation.
 

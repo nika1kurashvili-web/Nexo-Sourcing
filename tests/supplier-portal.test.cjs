@@ -144,6 +144,7 @@ test('supplier portal security boundaries', async t => {
   `);
   await pg.exec(fs.readFileSync('supabase/migrations/20260930_supplier_portal.sql', 'utf8'));
   await pg.exec(fs.readFileSync('supabase/migrations/20261001_item_unread.sql', 'utf8'));
+  await pg.exec(fs.readFileSync('supabase/migrations/20261002_share_link_token.sql', 'utf8'));
   const existingCreated = (await pg.query('select created_at from sourcing_requests where id=$1', [ids.request])).rows[0].created_at;
   const deadlineMigration = fs.readFileSync('supabase/migrations/20260930_request_deadlines.sql', 'utf8');
   await pg.exec(deadlineMigration);
@@ -422,6 +423,7 @@ test('supplier portal security boundaries', async t => {
       const stored = (await pg.query('select * from sourcing_supplier_share_links where id=$1', [created.id])).rows[0];
       assert.equal(stored.token_hash, portal.hashToken(raw));
       assert.ok(!JSON.stringify(stored).includes(raw));
+      assert.equal(load('lib/share-link-crypto.ts').decryptShareToken(stored.token_encrypted), raw);
       assert.equal((await portal.readSupplierPortal(raw)).items.length, 1);
       assert.ok((await shareActions.createSupplierLink(ids.request, ids.otherSupplier, 30)).error);
       const beforeCount = (await pg.query('select count(*)::int as n from sourcing_request_items')).rows[0].n;

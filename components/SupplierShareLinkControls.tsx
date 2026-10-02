@@ -6,15 +6,15 @@ import { createSupplierLink, revokeSupplierLink } from "@/app/share-link-actions
 
 export function SupplierShareLinkControls({ requestId, supplier, link }: {
   requestId: string; supplier: { id: string; name: string; count: number };
-  link: { id: string; expires_at: string | null } | null;
+  link: { id: string; expires_at: string | null; url?: string | null } | null;
 }) {
   const router = useRouter();
-  const [visibleLink, setVisibleLink] = useState<(NonNullable<typeof link> & { url?: string }) | null>(link);
+  const [visibleLink, setVisibleLink] = useState<NonNullable<typeof link> | null>(link);
   // Apply new server state without discarding a freshly generated URL for the
   // same link. Local success state updates immediately, before refresh finishes.
   useEffect(() => {
-    setVisibleLink(current => link && current?.id === link.id ? { ...link, url: current.url } : link);
-  }, [link?.id, link?.expires_at]);
+    setVisibleLink(current => link && current?.id === link.id ? { ...link, url: link.url ?? current.url } : link);
+  }, [link?.id, link?.expires_at, link?.url]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [days, setDays] = useState(30);
@@ -36,7 +36,7 @@ export function SupplierShareLinkControls({ requestId, supplier, link }: {
         if (result.error) setMessage(result.error);
         else if (result.id && result.url && result.expiresAt) {
           setVisibleLink({ id: result.id, url: result.url, expires_at: result.expiresAt });
-          setMessage("Link created. Copy it now; the full link is shown only in this session.");
+          setMessage("Link created. It stays visible here, so you can copy it any time.");
           router.refresh();
         }
       }
@@ -63,7 +63,7 @@ export function SupplierShareLinkControls({ requestId, supplier, link }: {
       {currentId && <button className="btn danger" disabled={busy} onClick={() => void run(true)}>Revoke Link</button>}
     </div>
     {url && !expired && <input aria-label="Supplier share link" value={url} readOnly onFocus={e => e.target.select()} />}
-    {currentId && !url && !expired && <p className="small muted">Link already created. Generate a new link if you no longer have the original URL. Revoke this link first; the original URL cannot be recovered.</p>}
+    {currentId && !url && !expired && <p className="small muted">This link was created before saved links were enabled, so its URL cannot be shown. Revoke it once and create a new one; new links stay visible here.</p>}
     {expiresAt && <div className="small muted">{expired ? "Expired" : "Expires"}: {new Date(expiresAt).toLocaleString("en-GB")}</div>}
     {message && <div role="status" className="small">{message}</div>}
   </div>;

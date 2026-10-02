@@ -4,6 +4,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { requireSourcingAccess } from "@/lib/auth";
 import { UUID_PATTERN } from "@/lib/supplier-validation";
+import { encryptShareToken, supplierLinkUrl } from "@/lib/share-link-crypto";
 
 export async function createSupplierLink(requestId: string, supplierId: string, days: number) {
   const { supabase, user } = await requireSourcingAccess();
@@ -22,16 +23,24 @@ export async function createSupplierLink(requestId: string, supplierId: string, 
   if (expireError) return { error: "Unable to create link. Check that the supplier portal migration has been applied." };
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
-  const { data, error } = await supabase.from("sourcing_supplier_share_links").insert({
+  const row: Record<string, string> = {
     request_id: requestId, supplier_id: supplierId, token_hash: createHash("sha256").update(token).digest("hex"),
     expires_at: expiresAt, created_by: user.id
-  }).select("id").single();
+  };
+  // The encrypted copy lets staff see this link again later. If the optional
+  // migration has not been applied yet, fall back to the previous behaviour.
+  const encrypted = encryptShareToken(token);
+  let result = await supabase.from("sourcing_supplier_share_links")
+    .insert(encrypted ? { ...row, token_encrypted: encrypted } : row).select("id").single();
+  if (result.error && encrypted && String(result.error.message ?? "").includes("token_encrypted")) {
+    result = await supabase.from("sourcing_supplier_share_links").insert(row).select("id").single();
+  }
+  const { data, error } = result;
   if (error || !data) return { error: "Unable to create link. Revoke any active link for this supplier first." };
   await supabase.from("sourcing_activity_log").insert({ request_id: requestId, user_id: user.id,
     action: "supplier_link_created", details: `Supplier share link created (expires ${expiresAt}).` });
   revalidatePath(`/requests/${requestId}`);
-  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://sourcing.nexo.ge").replace(/\/+$/, "");
-  return { id: data.id as string, url: `${siteUrl}/supplier/${token}`, expiresAt };
+  return { id: data.id as string, url: supplierLinkUrl(token), expiresAt };
 }
 
 export async function revokeSupplierLink(requestId: string, supplierId: string, linkId: string) {
