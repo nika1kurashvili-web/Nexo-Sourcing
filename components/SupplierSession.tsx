@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
-export function SupplierSession({ token, children }: { token: string; children: ReactNode }) {
+export function SupplierSession({ token, endpoint, children }: { token: string; endpoint?: string; children: ReactNode }) {
   const router = useRouter();
   const [unavailable, setUnavailable] = useState(false);
   useEffect(() => {
@@ -13,7 +13,7 @@ export function SupplierSession({ token, children }: { token: string; children: 
       if (checking) return;
       checking = true;
       try {
-        const result = await fetch(`/api/supplier/${token}`, { cache: "no-store", referrerPolicy: "no-referrer" });
+        const result = await fetch(endpoint ?? `/api/supplier/${token}`, { cache: "no-store", referrerPolicy: "no-referrer" });
         if (!disposed) {
           // Only an explicit "link invalid" answer (404) hides the page. Network
           // errors and temporary server errors must not destroy a half-filled form.
@@ -26,7 +26,7 @@ export function SupplierSession({ token, children }: { token: string; children: 
     const interval = setInterval(() => void check(), 30000);
     window.addEventListener("focus", check);
     return () => { disposed = true; clearInterval(interval); window.removeEventListener("focus", check); };
-  }, [token, router]);
+  }, [token, endpoint, router]);
   if (unavailable) return <p className="card">This supplier link is invalid or no longer active.</p>;
   return <>{children}</>;
 }

@@ -42,3 +42,8 @@ export function supplierLinkUrl(token: string) {
   const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://sourcing.nexo.ge").replace(/\/+$/, "");
   return `${siteUrl}/supplier/${token}`;
 }
+
+export function catalogLinkUrl(token: string) {
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "https://sourcing.nexo.ge").replace(/\/+$/, "");
+  return `${siteUrl}/supplier/catalog/${token}`;
+}

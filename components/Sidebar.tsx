@@ -10,6 +10,7 @@ export function Sidebar({ email }: { email: string }) {
         <Link href="/requests">Requests</Link>
         <Link href="/companies">Companies</Link>
         <Link href="/suppliers">Suppliers</Link>
+        <Link href="/products">Products</Link>
       </nav>
       <div className="sidebar-bottom">
         <div className="user-email">{email}</div>

@@ -13,7 +13,7 @@ export function supplierJson(value: unknown, status = 200) {
 }
 export function supplierDenied() { return supplierJson({ error: INVALID_LINK }, 404); }
 
-export async function supplierBody(request: Request) {
+export async function supplierBody(request: Request, maxBytes = 20000) {
   // Browser mutations must come from this site, not a form on a third-party site.
   if (request.headers.get("origin") !== new URL(request.url).origin || !request.headers.get("content-type")?.startsWith("application/json")) {
     throw new Error("Invalid request.");
@@ -26,7 +26,7 @@ export async function supplierBody(request: Request) {
     const { value, done } = await reader.read();
     if (done) break;
     length += value.byteLength;
-    if (length > 20000) { await reader.cancel(); throw new Error("Response is too large."); }
+    if (length > maxBytes) { await reader.cancel(); throw new Error("Response is too large."); }
     chunks.push(value);
   }
   const text = Buffer.concat(chunks).toString("utf8");
