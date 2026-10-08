@@ -25,6 +25,9 @@ export function ProductFieldInputs({ values = {}, staff = false }: { values?: Re
         {number("box_height_cm", "Box Height (cm)")}
         {number("weight_kg", "Weight (kg)")}
       </div>
+      <div className="form-grid four">
+        {number("qty_in_box", "Quantity in box (pcs)", "1")}
+      </div>
       {staff && <label>Internal Note (only visible to Nexo)<textarea name="internal_note" maxLength={5000} defaultValue={v("internal_note")} /></label>}
     </>
   );

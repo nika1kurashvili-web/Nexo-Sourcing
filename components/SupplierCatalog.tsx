@@ -10,7 +10,7 @@ import { ProductFieldInputs } from "@/components/ProductFieldInputs";
 type Product = {
   id: string; name: string; description: string | null; specifications: string | null;
   price: number | null; currency: string; moq: number | null; lead_time_days: number | null;
-  box_length_cm: number | null; box_width_cm: number | null; box_height_cm: number | null; weight_kg: number | null;
+  box_length_cm: number | null; box_width_cm: number | null; box_height_cm: number | null; weight_kg: number | null; qty_in_box: number | null;
   status: "pending" | "approved";
   images: { id: string; approved: boolean }[];
   change: { kind: "edit" | "delete"; payload: Record<string, any> | null; created_at: string } | null;
@@ -153,6 +153,7 @@ function ProductCard({ token, product }: { token: string; product: Product }) {
         <dt>Lead time</dt><dd>{product.lead_time_days != null ? `${product.lead_time_days} days` : "—"}</dd>
         <dt>Box (L×W×H)</dt><dd>{box.some(value => value != null) ? `${box.map(value => (value != null ? number(value) : "?")).join(" × ")} cm` : "—"}</dd>
         <dt>Weight</dt><dd>{product.weight_kg != null ? `${number(product.weight_kg)} kg` : "—"}</dd>
+        <dt>Qty in box</dt><dd>{product.qty_in_box != null ? number(product.qty_in_box) : "—"}</dd>
       </dl>
       {product.description && <p className="product-text">{product.description}</p>}
       {product.specifications && <p className="product-text muted">{product.specifications}</p>}

@@ -5,7 +5,7 @@ import { TOKEN_PATTERN } from "@/lib/supplier-validation";
 
 // Deliberate projection: the supplier-facing catalog never selects internal_note.
 export const CATALOG_PRODUCT_COLUMNS =
-  "id,name,description,specifications,price,currency,moq,lead_time_days,box_length_cm,box_width_cm,box_height_cm,weight_kg,status,created_at,updated_at";
+  "id,name,description,specifications,price,currency,moq,lead_time_days,box_length_cm,box_width_cm,box_height_cm,weight_kg,qty_in_box,status,created_at,updated_at";
 
 export async function catalogScope(token: string) {
   if (!TOKEN_PATTERN.test(token)) throw new Error(INVALID_LINK);

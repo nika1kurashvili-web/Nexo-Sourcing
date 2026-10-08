@@ -5,7 +5,7 @@ export { UUID_PATTERN };
 export const CURRENCIES = ["USD", "CNY", "EUR", "GEL"] as const;
 export const PRODUCT_TEXT = ["name", "description", "specifications"] as const;
 export const PRODUCT_NUMBERS = [
-  "price", "moq", "lead_time_days", "box_length_cm", "box_width_cm", "box_height_cm", "weight_kg"
+  "price", "moq", "lead_time_days", "box_length_cm", "box_width_cm", "box_height_cm", "weight_kg", "qty_in_box"
 ] as const;
 // Fields a supplier may submit. Staff additionally have `internal_note`.
 export const PRODUCT_FIELDS = [...PRODUCT_TEXT, "currency", ...PRODUCT_NUMBERS] as const;
@@ -47,7 +47,7 @@ export function parseProductFields(value: unknown, options: { staff?: boolean } 
       throw new Error(`Invalid ${label(key)}.`);
     }
     const number = Number(typeof raw === "string" ? raw.trim() : raw);
-    if (!Number.isFinite(number) || number < 0 || number > 9999999 || (key === "lead_time_days" && !Number.isInteger(number))) {
+    if (!Number.isFinite(number) || number < 0 || number > 9999999 || ((key === "lead_time_days" || key === "qty_in_box") && !Number.isInteger(number))) {
       throw new Error(`Invalid ${label(key)}.`);
     }
     result[key] = number;

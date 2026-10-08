@@ -15,7 +15,7 @@ const COMPARE_FIELDS: [string, string][] = [
   ["name", "Name"], ["description", "Description"], ["specifications", "Specifications"], ["price", "Price"],
   ["currency", "Currency"], ["moq", "MOQ"], ["lead_time_days", "Lead time (days)"],
   ["box_length_cm", "Box length (cm)"], ["box_width_cm", "Box width (cm)"], ["box_height_cm", "Box height (cm)"],
-  ["weight_kg", "Weight (kg)"]
+  ["weight_kg", "Weight (kg)"], ["qty_in_box", "Quantity in box"]
 ];
 
 function number(value: unknown) {
@@ -43,6 +43,7 @@ function Specs({ product }: { product: any }) {
       <dt>Lead time</dt><dd>{product.lead_time_days != null ? `${product.lead_time_days} days` : "—"}</dd>
       <dt>Box (L×W×H)</dt><dd>{box.some(value => value != null) ? `${box.map(value => (value != null ? number(value) : "?")).join(" × ")} cm` : "—"}</dd>
       <dt>Weight</dt><dd>{product.weight_kg != null ? `${number(product.weight_kg)} kg` : "—"}</dd>
+      <dt>Qty in box</dt><dd>{product.qty_in_box != null ? number(product.qty_in_box) : "—"}</dd>
     </dl>
   );
 }

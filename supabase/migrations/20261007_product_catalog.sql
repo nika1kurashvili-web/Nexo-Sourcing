@@ -40,6 +40,7 @@ create table public.sourcing_products (
   box_width_cm numeric(14,2) check (box_width_cm is null or (box_width_cm >= 0 and box_width_cm <= 9999999)),
   box_height_cm numeric(14,2) check (box_height_cm is null or (box_height_cm >= 0 and box_height_cm <= 9999999)),
   weight_kg numeric(14,3) check (weight_kg is null or (weight_kg >= 0 and weight_kg <= 9999999)),
+  qty_in_box integer check (qty_in_box is null or (qty_in_box >= 0 and qty_in_box <= 9999999)),
   -- Nexo-only: never selected by the supplier-facing server code.
   internal_note text check (internal_note is null or char_length(internal_note) <= 5000),
   status text not null default 'approved' check (status in ('pending','approved')),
@@ -106,7 +107,7 @@ declare
   image_path text;
   removed jsonb := '[]'::jsonb;
   allowed constant text[] := array['name','description','specifications','price','currency',
-    'moq','lead_time_days','box_length_cm','box_width_cm','box_height_cm','weight_kg'];
+    'moq','lead_time_days','box_length_cm','box_width_cm','box_height_cm','weight_kg','qty_in_box'];
 begin
   select * into share from public.sourcing_catalog_links
     where token_hash = p_hash and active and revoked_at is null for share;
@@ -124,10 +125,10 @@ begin
     end if;
     rec := jsonb_populate_record(null::public.sourcing_products, p_payload);
     insert into public.sourcing_products (supplier_id, name, description, specifications, price, currency,
-      moq, lead_time_days, box_length_cm, box_width_cm, box_height_cm, weight_kg, status, created_by_supplier)
+      moq, lead_time_days, box_length_cm, box_width_cm, box_height_cm, weight_kg, qty_in_box, status, created_by_supplier)
     values (share.supplier_id, btrim(rec.name), rec.description, rec.specifications, rec.price,
       coalesce(rec.currency, 'USD'), rec.moq, rec.lead_time_days, rec.box_length_cm, rec.box_width_cm,
-      rec.box_height_cm, rec.weight_kg, 'pending', true)
+      rec.box_height_cm, rec.weight_kg, rec.qty_in_box, 'pending', true)
     returning id into new_id;
     return jsonb_build_object('id', new_id);
 
@@ -244,7 +245,7 @@ begin
         specifications = rec.specifications, price = rec.price, currency = coalesce(rec.currency, currency),
         moq = rec.moq, lead_time_days = rec.lead_time_days, box_length_cm = rec.box_length_cm,
         box_width_cm = rec.box_width_cm, box_height_cm = rec.box_height_cm, weight_kg = rec.weight_kg,
-        updated_at = now()
+        qty_in_box = rec.qty_in_box, updated_at = now()
       where id = prod.id;
       if prod.status = 'approved' then
         update public.sourcing_product_images set approved = true where product_id = prod.id and ready;
