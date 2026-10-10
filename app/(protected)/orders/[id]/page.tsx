@@ -60,6 +60,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <div className="muted">{order.sourcing_suppliers?.name ?? "Supplier"} · {order.currency} · <Link href="/orders">All orders</Link></div>
         </div>
         <div className="badges">
+          <a className="btn secondary" href={`/orders/${id}/export`}>⬇ Download Excel</a>
           <span className={`badge ${BADGE[status] ?? ""}`}>{STATUS_LABELS[status]}</span>
           {items.length > 0 && <span className={`badge ${preparedCount === items.length ? "success" : ""}`}>Prepared {preparedCount} of {items.length}</span>}
         </div>
