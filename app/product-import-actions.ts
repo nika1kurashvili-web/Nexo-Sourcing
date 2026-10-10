@@ -46,15 +46,22 @@ export async function importProductsAction(formData: FormData): Promise<ImportRe
     if (dryRun) return result;
 
     const now = new Date().toISOString();
-    for (let start = 0; start < toCreate.length; start += 100) {
-      const chunk = toCreate.slice(start, start + 100).map(row => ({
-        ...row.fields, ...(row.sku ? { sku: row.sku } : {}), supplier_id: supplierId, status: "approved",
-        created_by_supplier: false, created_by: user.id, approved_by: user.id, approved_at: now
-      }));
-      const { error } = await db.from("sourcing_products").insert(chunk);
-      if (error) {
-        revalidatePath("/products");
-        return { ...result, ok: false, created: start, updated: 0, errors: [`Stopped while creating products (rows ${start + 1}+): ${error.message}. Rows before this point were saved; fix the file and import again.`] };
+    // Rows with and without a code are inserted separately: a bulk insert fills a missing key with NULL
+    // instead of using the column default, which would break the automatic code (P00012...).
+    let created = 0;
+    for (const group of [toCreate.filter(row => row.sku), toCreate.filter(row => !row.sku)]) {
+      for (let start = 0; start < group.length; start += 100) {
+        const chunk = group.slice(start, start + 100).map(row => ({
+          ...row.fields, ...(row.sku ? { sku: row.sku } : {}), supplier_id: supplierId, status: "approved",
+          created_by_supplier: false, created_by: user.id, approved_by: user.id, approved_at: now
+        }));
+        const { error } = await db.from("sourcing_products").insert(chunk);
+        if (error) {
+          console.error("Product import failed", error);
+          revalidatePath("/products");
+          return { ...result, ok: false, created, updated: 0, errors: [`Stopped while creating products: ${error.message}. ${created} product(s) were saved before this; fix the file and import again (existing codes are updated, not duplicated).`] };
+        }
+        created += chunk.length;
       }
     }
     let updated = 0;

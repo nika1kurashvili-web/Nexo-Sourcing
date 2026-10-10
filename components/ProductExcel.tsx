@@ -1,12 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { importProductsAction, type ImportResult } from "@/app/product-import-actions";
 
 // Download the product sheet, edit it in Excel, and upload it back (check first, then import).
 export function ProductExcel({ suppliers, defaultSupplierId = "" }: { suppliers: { id: string; name: string }[]; defaultSupplierId?: string }) {
-  const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [supplierId, setSupplierId] = useState(defaultSupplierId);
   const [busy, setBusy] = useState(false);
@@ -23,7 +21,7 @@ export function ProductExcel({ suppliers, defaultSupplierId = "" }: { suppliers:
       form.set("file", file); form.set("supplier_id", supplierId); form.set("dry", dry ? "1" : "0");
       const result = await importProductsAction(form);
       if (dry) { setChecked(result); setDone(null); }
-      else { setDone(result); setChecked(null); if (result.ok && input.current) input.current.value = ""; router.refresh(); }
+      else { setDone(result); setChecked(null); if (result.ok && input.current) input.current.value = ""; }
     } catch {
       setChecked({ ok: false, dryRun: dry, created: 0, updated: 0, errors: [], warnings: [], error: "The file could not be sent. Check your connection and try again." });
     } finally { setBusy(false); }
@@ -67,6 +65,7 @@ export function ProductExcel({ suppliers, defaultSupplierId = "" }: { suppliers:
           {done.ok ? <strong>Imported: {done.created} created, {done.updated} updated.</strong> : <strong>The import did not finish.</strong>}
           {done.error && <div>{done.error}</div>}
           {done.errors.map((error, index) => <div key={index}>{error}</div>)}
+          {(done.created > 0 || done.updated > 0) && <div style={{ marginTop: 8 }}><a className="btn" href="/products">Show products</a></div>}
         </div>
       )}
     </div>
