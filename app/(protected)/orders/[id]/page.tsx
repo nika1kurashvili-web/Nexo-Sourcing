@@ -9,6 +9,8 @@ import {
 } from "@/app/order-actions";
 import { STATUS_LABELS, lineTotal, money, orderTotals, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { LineSearch } from "@/components/LineSearch";
+import { BUCKET } from "@/lib/supplier-portal";
 import { OrderProductPicker } from "@/components/OrderProductPicker";
 
 export const dynamic = "force-dynamic";
@@ -50,6 +52,22 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const productsResult = editable
     ? await db.from("sourcing_products").select("id,sku,name,price,currency").eq("supplier_id", order.supplier_id).eq("status", "approved").order("name").limit(2000)
     : { data: [] };
+  // One photo per product (shown small; click opens it). Signed links are short-lived and made for staff only.
+  const wanted = Array.from(new Set([...items.map(item => item.product_id), ...(productsResult.data ?? []).map((product: any) => product.id)].filter(Boolean)));
+  const photoUrl = new Map<string, string>();
+  if (wanted.length) {
+    const { data: photos } = await db.from("sourcing_product_images").select("product_id,object_path,approved,created_at")
+      .eq("ready", true).in("product_id", wanted).order("created_at");
+    const firstPerProduct = new Map<string, string>();
+    for (const photo of photos ?? []) if (!firstPerProduct.has(photo.product_id)) firstPerProduct.set(photo.product_id, photo.object_path);
+    const paths = Array.from(firstPerProduct.values());
+    if (paths.length) {
+      const { data: signed } = await db.storage.from(BUCKET).createSignedUrls(paths, 3600);
+      const urlByPath = new Map<string, string>();
+      paths.forEach((path, index) => { if (signed?.[index]?.signedUrl) urlByPath.set(path, signed[index].signedUrl); });
+      firstPerProduct.forEach((path, productId) => { const url = urlByPath.get(path); if (url) photoUrl.set(productId, url); });
+    }
+  }
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
 
   return (
@@ -90,12 +108,15 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <input type="hidden" name="order_id" value={id} />
             {/* Enter inside a field must save, never approve or remove a line: this is the first (default) submit button. */}
             <button type="submit" tabIndex={-1} aria-hidden="true" style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}>Save</button>
-            <div className="table-wrap order-table"><table>
-              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price ({order.currency})</th><th>Supplier suggestion</th><th>Line total</th><th>Prepared</th><th></th></tr></thead>
+            <LineSearch><div className="table-wrap order-table"><table>
+              <thead><tr><th>Photo</th><th>Code</th><th>Product</th><th>Quantity</th><th>Price ({order.currency})</th><th>Supplier suggestion</th><th>Line total</th><th>Prepared</th><th></th></tr></thead>
               <tbody>{items.map(item => {
                 const line = lineTotal(item.quantity, item.unit_price);
                 return (
                   <tr key={item.id}>
+                    <td className="thumb-cell">{item.product_id && photoUrl.get(item.product_id)
+                      ? <a href={photoUrl.get(item.product_id)} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={photoUrl.get(item.product_id)} alt={item.product_name} loading="lazy" /></a>
+                      : <div className="order-thumb empty">—</div>}</td>
                     <td className="code-cell">{item.sku ?? "—"}</td>
                     <td>{item.product_name}{item.product_id === null && <div className="small muted">removed from catalog</div>}</td>
                     <td>{editable ? <input type="number" name={`qty_${item.id}`} defaultValue={Number(item.quantity)} min="0.01" step="any" style={{ width: 78 }} />
@@ -116,7 +137,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                   </tr>
                 );
               })}</tbody>
-            </table></div>
+            </table></div></LineSearch>
             {editable && <div className="product-actions" style={{ marginTop: 12 }}>
               <button className="btn" type="submit">Save quantities and prices</button>
               {totals.proposals > 0 && <button className="btn secondary" type="submit" formAction={approveProposalAction}>Approve all suggestions ({totals.proposals})</button>}
@@ -140,7 +161,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <summary>+ Add products from {order.sourcing_suppliers?.name ?? "the supplier"}'s catalog</summary>
           <div style={{ marginTop: 12 }}>
             {(productsResult.data ?? []).length === 0 ? <div className="muted">This supplier has no approved products yet.</div> : (
-              <OrderProductPicker products={productsResult.data} inOrder={items.map(item => item.product_id).filter(Boolean)}
+              <OrderProductPicker products={(productsResult.data ?? []).map((product: any) => ({ ...product, photo: photoUrl.get(product.id) ?? null }))} inOrder={items.map(item => item.product_id).filter(Boolean)}
                 orderId={id} orderCurrency={order.currency} action={addOrderItemsAction} />
             )}
           </div>

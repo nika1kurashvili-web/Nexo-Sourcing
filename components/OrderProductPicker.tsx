@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-type Row = { id: string; sku: string; name: string; price: number | null; currency: string };
+type Row = { id: string; sku: string; name: string; price: number | null; currency: string; photo?: string | null };
 
 // Searchable list of the supplier's approved products with a tick box and a quantity each.
 // Plain text only (no photos) so even a 300-product catalog stays light.
@@ -25,11 +25,14 @@ export function OrderProductPicker({ products, inOrder, orderId, orderCurrency, 
       {shown.length === 0 ? <div className="muted">No more products to add.</div> : (
         <div className="table-wrap order-table" style={{ maxHeight: 420, overflowY: "auto" }}>
           <table>
-            <thead><tr><th></th><th>Code</th><th>Product</th><th>Catalog price</th><th>Quantity</th></tr></thead>
+            <thead><tr><th></th><th>Photo</th><th>Code</th><th>Product</th><th>Catalog price</th><th>Quantity</th></tr></thead>
             <tbody>
               {shown.slice(0, 200).map(product => (
                 <tr key={product.id}>
                   <td><input type="checkbox" name="product" value={product.id} aria-label={`Add ${product.name}`} /></td>
+                  <td className="thumb-cell">{product.photo
+                    ? <a href={product.photo} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={product.photo} alt={product.name} loading="lazy" /></a>
+                    : <div className="order-thumb empty">—</div>}</td>
                   <td className="code-cell">{product.sku}</td>
                   <td>{product.name}</td>
                   <td>{product.price === null ? "—" : `${product.currency} ${product.price}`}

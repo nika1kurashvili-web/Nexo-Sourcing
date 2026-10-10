@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { LineSearch } from "@/components/LineSearch";
 
-type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean };
+type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean; photoId: string | null };
 type Order = { id: string; order_no: string; currency: string; status: "sent" | "confirmed"; items: Item[] };
 
 const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -57,7 +58,10 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
         <input type="checkbox" checked={ready} disabled={busy} onChange={event => void toggleReady(event.target.checked)}
           aria-label={`${item.name} is prepared`} style={{ width: 22, height: 22 }} />
       </td>
-      <td>{item.sku ?? "—"}</td>
+      <td className="thumb-cell">{item.photoId
+        ? <a href={`/api/supplier-catalog/${token}/images/${item.photoId}`} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={`/api/supplier-catalog/${token}/images/${item.photoId}`} referrerPolicy="no-referrer" alt={item.name} loading="lazy" /></a>
+        : <div className="order-thumb empty">—</div>}</td>
+      <td className="code-cell">{item.sku ?? "—"}</td>
       <td>{item.name}</td>
       <td>{item.quantity.toLocaleString("en-GB")}</td>
       <td>{item.price === null ? <span className="muted">not set</span> : `${order.currency} ${fmt(item.price)}`}</td>
@@ -66,9 +70,9 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
           <div className="stack" style={{ gap: 6 }}>
             <div className="product-actions">
               <input type="number" min="0" step="any" value={value} onChange={event => setValue(event.target.value)}
-                placeholder={`Price (${order.currency})`} style={{ width: 130 }} disabled={busy} aria-label={`Suggested price for ${item.name}`} />
-              <button className="btn" type="button" disabled={busy || value.trim() === ""} onClick={() => save(value)}>Suggest</button>
-              {item.proposed !== null && <button className="btn secondary" type="button" disabled={busy} onClick={() => { setValue(""); void save(null); }}>Withdraw</button>}
+                placeholder={`Price (${order.currency})`} style={{ width: 110 }} disabled={busy} aria-label={`Suggested price for ${item.name}`} />
+              <button className="btn sm" type="button" disabled={busy || value.trim() === ""} onClick={() => save(value)}>Suggest</button>
+              {item.proposed !== null && <button className="btn secondary sm" type="button" disabled={busy} onClick={() => { setValue(""); void save(null); }}>Withdraw</button>}
             </div>
             {item.proposed !== null && <span className="badge warning">Waiting for Nexo: {order.currency} {fmt(item.proposed)}</span>}
             {message && <span role={failed ? "alert" : "status"} className={failed ? "notice" : "small"}>{message}</span>}
@@ -92,10 +96,10 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
               <div><h2 style={{ margin: 0 }}>{order.order_no}</h2><div className="muted small">{order.currency}</div></div>
               <span className={`badge ${order.status === "confirmed" ? "success" : "warning"}`}>{order.status === "confirmed" ? "Confirmed" : "Open for price suggestions"}</span>
             </div>
-            <div className="table-wrap"><table>
-              <thead><tr><th>Prepared</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Your suggestion</th></tr></thead>
+            <LineSearch><div className="table-wrap order-table"><table>
+              <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Your suggestion</th></tr></thead>
               <tbody>{order.items.map(item => <Line key={item.id} token={token} order={order} item={item} />)}</tbody>
-            </table></div>
+            </table></div></LineSearch>
             <p className="small muted">Tick "Prepared" when a product is packed and ready, so Nexo can see it. Price suggestions can be sent while the order is open; prepared marks work until the order is finished.</p>
             <p style={{ marginBottom: 0 }}><strong>Total (approved prices): {order.currency} {fmt(Math.round(total * 100) / 100)}</strong></p>
           </div>

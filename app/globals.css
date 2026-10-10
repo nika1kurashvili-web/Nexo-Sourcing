@@ -125,3 +125,7 @@ details.card[open]>summary{margin-bottom:14px}
 .order-table .product-actions{gap:6px}
 .btn.sm{padding:5px 10px;font-size:12px;border-radius:7px}
 .order-table .stack{gap:4px}
+.order-thumb{display:block;width:46px;height:46px;object-fit:cover;border:1px solid var(--line);border-radius:8px;background:#fff}
+.order-thumb.empty{display:grid;place-items:center;color:var(--muted);background:#fafbfc;border-style:dashed;font-size:12px}
+.order-table .thumb-cell{padding:4px 6px;width:56px}
+a:hover > .order-thumb{border-color:#7a8796}

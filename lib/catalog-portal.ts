@@ -68,10 +68,19 @@ export async function readSupplierOrders(token: string) {
   const rows = (orders.data ?? []) as any[];
   let items: any[] = [];
   if (rows.length) {
-    const result = await db.from("sourcing_order_items").select("id,order_id,sku,product_name,quantity,unit_price,proposed_price,prepared_at")
+    const result = await db.from("sourcing_order_items").select("id,order_id,product_id,sku,product_name,quantity,unit_price,proposed_price,prepared_at")
       .in("order_id", rows.map(order => order.id)).order("created_at");
     if (result.error) throw new Error(INVALID_LINK);
     items = result.data ?? [];
+  }
+  // First photo of each product (the supplier's own photos only), served through the checked image route.
+  const productIds = Array.from(new Set(items.map(item => item.product_id).filter(Boolean)));
+  const photoOf = new Map<string, string>();
+  if (productIds.length) {
+    const photos = await db.from("sourcing_product_images").select("id,product_id,approved,created_at")
+      .eq("supplier_id", link.supplier_id).eq("ready", true).in("product_id", productIds).order("created_at");
+    if (photos.error) throw new Error(INVALID_LINK);
+    for (const photo of (photos.data ?? []) as any[]) if (!photoOf.has(photo.product_id)) photoOf.set(photo.product_id, photo.id);
   }
   return {
     supplierName: supplier.data.name as string,
@@ -82,11 +91,12 @@ export async function readSupplierOrders(token: string) {
         quantity: Number(item.quantity),
         price: item.unit_price === null ? null : Number(item.unit_price),
         proposed: item.proposed_price === null ? null : Number(item.proposed_price),
-        prepared: item.prepared_at !== null
+        prepared: item.prepared_at !== null,
+        photoId: (item.product_id ? photoOf.get(item.product_id) : undefined) ?? null
       }))
     })) as {
       id: string; order_no: string; currency: string; status: "sent" | "confirmed";
-      items: { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean }[];
+      items: { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean; photoId: string | null }[];
     }[]
   };
 }
