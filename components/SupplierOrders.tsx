@@ -63,8 +63,9 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
         : <div className="order-thumb empty">—</div>}</td>
       <td className="code-cell">{item.sku ?? "—"}</td>
       <td>{item.name}</td>
-      <td>{item.quantity.toLocaleString("en-GB")}</td>
-      <td>{item.price === null ? <span className="muted">not set</span> : `${order.currency} ${fmt(item.price)}`}</td>
+      <td className="num">{item.quantity.toLocaleString("en-GB")}</td>
+      <td className="num">{item.price === null ? <span className="muted">not set</span> : `${order.currency} ${fmt(item.price)}`}</td>
+      <td className="num"><strong>{item.price === null ? <span className="muted">—</span> : `${order.currency} ${fmt(Math.round(item.quantity * item.price * 100) / 100)}`}</strong></td>
       <td>
         {open ? (
           <div className="stack" style={{ gap: 6 }}>
@@ -90,19 +91,37 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
       {orders.length === 0 && <div className="card empty">No orders yet.</div>}
       {orders.map(order => {
         const total = order.items.reduce((sum, item) => sum + (item.price === null ? 0 : Math.round(item.quantity * item.price * 100) / 100), 0);
+        const prepared = order.items.filter(item => item.prepared).length;
+        const waiting = order.items.filter(item => item.proposed !== null).length;
+        const unpriced = order.items.filter(item => item.price === null).length;
         return (
-          <div className="card" key={order.id}>
-            <div className="page-head" style={{ marginBottom: 8 }}>
-              <div><h2 style={{ margin: 0 }}>{order.order_no}</h2><div className="muted small">{order.currency}</div></div>
-              <span className={`badge ${order.status === "confirmed" ? "success" : "warning"}`}>{order.status === "confirmed" ? "Confirmed" : "Open for price suggestions"}</span>
+          <details className="card order-fold" key={order.id}>
+            <summary className="order-fold-head">
+              <span className="order-fold-title"><strong>{order.order_no}</strong><span className="muted small">{order.currency} · {order.items.length} product{order.items.length === 1 ? "" : "s"} · Prepared {prepared}/{order.items.length}</span></span>
+              <span className="order-fold-end">
+                <strong>{order.currency} {fmt(Math.round(total * 100) / 100)}</strong>
+                {waiting > 0 && <span className="badge warning">{waiting} waiting</span>}
+                <span className={`badge ${order.status === "confirmed" ? "success" : "warning"}`}>{order.status === "confirmed" ? "Confirmed" : "Open for price suggestions"}</span>
+                <span className="order-fold-chevron" aria-hidden="true">▾</span>
+              </span>
+            </summary>
+            <div style={{ marginTop: 14 }}>
+            <div className="grid-4" style={{ marginBottom: 14 }}>
+              <div className="stat"><div className="muted small">Total (approved prices)</div><div className="stat-value" style={{ fontSize: 20 }}>{order.currency} {fmt(Math.round(total * 100) / 100)}</div>
+                {unpriced > 0 && <div className="small muted">{unpriced} without an approved price</div>}</div>
+              <div className="stat"><div className="muted small">Prepared</div><div className="stat-value" style={{ fontSize: 20 }}>{prepared} / {order.items.length}</div>
+                <div className="small muted">tick each packed product</div></div>
+              <div className="stat"><div className="muted small">Waiting for Nexo</div><div className="stat-value" style={{ fontSize: 20 }}>{waiting}</div>
+                <div className="small muted">price suggestion{waiting === 1 ? "" : "s"}</div></div>
+              <div className="stat"><div className="muted small">Products</div><div className="stat-value" style={{ fontSize: 20 }}>{order.items.length}</div></div>
             </div>
             <LineSearch><div className="table-wrap order-table"><table>
-              <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Your suggestion</th></tr></thead>
+              <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Line total</th><th>Your suggestion</th></tr></thead>
               <tbody>{order.items.map(item => <Line key={item.id} token={token} order={order} item={item} />)}</tbody>
             </table></div></LineSearch>
-            <p className="small muted">Tick "Prepared" when a product is packed and ready, so Nexo can see it. Price suggestions can be sent while the order is open; prepared marks work until the order is finished.</p>
-            <p style={{ marginBottom: 0 }}><strong>Total (approved prices): {order.currency} {fmt(Math.round(total * 100) / 100)}</strong></p>
-          </div>
+            <p className="small muted" style={{ marginBottom: 0 }}>Tick "Prepared" when a product is packed and ready, so Nexo can see it. Price suggestions can be sent while the order is open; prepared marks work until the order is finished.</p>
+            </div>
+          </details>
         );
       })}
     </div>

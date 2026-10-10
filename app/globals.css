@@ -129,3 +129,12 @@ details.card[open]>summary{margin-bottom:14px}
 .order-thumb.empty{display:grid;place-items:center;color:var(--muted);background:#fafbfc;border-style:dashed;font-size:12px}
 .order-table .thumb-cell{padding:4px 6px;width:56px}
 a:hover > .order-thumb{border-color:#7a8796}
+.order-fold{padding:0}
+.order-fold-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;padding:14px 18px;cursor:pointer;list-style:none}
+.order-fold-head::-webkit-details-marker{display:none}
+.order-fold > div{padding:0 18px 18px}
+.order-fold-title{display:grid;gap:2px}.order-fold-title strong{font-size:17px}
+.order-fold-end{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px}
+.order-fold-chevron{transition:transform .15s;color:var(--muted)}
+.order-fold[open] .order-fold-chevron{transform:rotate(180deg)}
+.order-fold[open] > .order-fold-head{border-bottom:1px solid var(--line)}
