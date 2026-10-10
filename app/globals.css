@@ -109,3 +109,19 @@ details.card[open]>summary{margin-bottom:14px}
 .skeleton-bar{height:16px;border-radius:8px;background:linear-gradient(90deg,#eef0f2 25%,#f7f8f9 50%,#eef0f2 75%);background-size:200% 100%;animation:skeleton-pulse 1.2s ease-in-out infinite}
 .skeleton-bar.title{height:28px;width:220px}.skeleton-bar.short{width:60%}.skeleton-bar.block{height:90px}
 @keyframes skeleton-pulse{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+/* Order tables: compact, readable, calm */
+.order-table{border:1px solid var(--line);border-radius:12px;background:#fff}
+.order-table table{min-width:680px;font-size:13px}
+.order-table th{font-size:11px;letter-spacing:.04em;background:#f7f8fa;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:1}
+.order-table td{padding:6px 10px;vertical-align:middle}
+.order-table tbody tr:nth-child(even){background:#fbfbfc}
+.order-table tbody tr:hover{background:#f3f6f9}
+.order-table input[type=number]{padding:5px 8px;font-size:13px;border-radius:7px;text-align:right}
+.order-table input[type=checkbox]{width:16px;height:16px}
+.order-table .code-cell{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#5b6570;white-space:nowrap}
+.order-table .num{text-align:right;white-space:nowrap}
+.order-table .badge{padding:3px 8px;font-size:11px}
+.order-table .product-actions{gap:6px}
+.btn.sm{padding:5px 10px;font-size:12px;border-radius:7px}
+.order-table .stack{gap:4px}

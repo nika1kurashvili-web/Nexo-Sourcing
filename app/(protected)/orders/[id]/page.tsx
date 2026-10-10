@@ -84,35 +84,35 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <h2>Products</h2>
+        <h2 style={{ marginTop: 0 }}>Products <span className="muted small" style={{ fontWeight: 500 }}>· {items.length}</span></h2>
         {items.length === 0 ? <div className="empty">No products yet. Add some below.</div> : (
           <form action={saveOrderItemsAction}>
             <input type="hidden" name="order_id" value={id} />
             {/* Enter inside a field must save, never approve or remove a line: this is the first (default) submit button. */}
             <button type="submit" tabIndex={-1} aria-hidden="true" style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}>Save</button>
-            <div className="table-wrap"><table>
+            <div className="table-wrap order-table"><table>
               <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price ({order.currency})</th><th>Supplier suggestion</th><th>Line total</th><th>Prepared</th><th></th></tr></thead>
               <tbody>{items.map(item => {
                 const line = lineTotal(item.quantity, item.unit_price);
                 return (
                   <tr key={item.id}>
-                    <td>{item.sku ?? "—"}</td>
+                    <td className="code-cell">{item.sku ?? "—"}</td>
                     <td>{item.product_name}{item.product_id === null && <div className="small muted">removed from catalog</div>}</td>
-                    <td>{editable ? <input type="number" name={`qty_${item.id}`} defaultValue={Number(item.quantity)} min="0.01" step="any" style={{ width: 100 }} />
+                    <td>{editable ? <input type="number" name={`qty_${item.id}`} defaultValue={Number(item.quantity)} min="0.01" step="any" style={{ width: 78 }} />
                       : Number(item.quantity).toLocaleString("en-GB")}</td>
-                    <td>{editable ? <input type="number" name={`price_${item.id}`} defaultValue={item.unit_price === null ? "" : Number(item.unit_price)} min="0" step="any" style={{ width: 110 }} />
+                    <td>{editable ? <input type="number" name={`price_${item.id}`} defaultValue={item.unit_price === null ? "" : Number(item.unit_price)} min="0" step="any" style={{ width: 88 }} />
                       : money(item.unit_price, order.currency)}</td>
                     <td>{item.proposed_price === null ? <span className="muted">—</span> : (
                       <div className="stack" style={{ gap: 6 }}>
                         <strong>{money(item.proposed_price, order.currency)}</strong>
                         {editable && <div className="product-actions">
-                          <button className="btn" type="submit" formAction={approveProposalAction} name="item" value={item.id}>Approve</button>
-                          <button className="btn secondary" type="submit" formAction={rejectProposalAction} name="item" value={item.id}>Reject</button>
+                          <button className="btn sm" type="submit" formAction={approveProposalAction} name="item" value={item.id}>Approve</button>
+                          <button className="btn secondary sm" type="submit" formAction={rejectProposalAction} name="item" value={item.id}>Reject</button>
                         </div>}
                       </div>)}</td>
-                    <td>{line === null ? <span className="muted">no price</span> : money(line, order.currency)}</td>
+                    <td className="num"><strong>{line === null ? <span className="muted">no price</span> : money(line, order.currency)}</strong></td>
                     <td>{item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}</td>
-                    <td>{editable && <button className="btn danger" type="submit" formAction={removeOrderItemAction} name="item" value={item.id} title="Remove from order">Remove</button>}</td>
+                    <td>{editable && <button className="btn danger sm" type="submit" formAction={removeOrderItemAction} name="item" value={item.id} title="Remove from order">Remove</button>}</td>
                   </tr>
                 );
               })}</tbody>
