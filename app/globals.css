@@ -105,3 +105,7 @@ details.card>summary::-webkit-details-marker{display:none}
 details.card[open]>summary{margin-bottom:14px}
 @media(max-width:1000px){.filter-bar{grid-template-columns:1fr 1fr}}
 @media(max-width:720px){.filter-bar{grid-template-columns:1fr}.product-grid{grid-template-columns:1fr}}
+.skeleton{display:grid;gap:14px}
+.skeleton-bar{height:16px;border-radius:8px;background:linear-gradient(90deg,#eef0f2 25%,#f7f8f9 50%,#eef0f2 75%);background-size:200% 100%;animation:skeleton-pulse 1.2s ease-in-out infinite}
+.skeleton-bar.title{height:28px;width:220px}.skeleton-bar.short{width:60%}.skeleton-bar.block{height:90px}
+@keyframes skeleton-pulse{0%{background-position:200% 0}100%{background-position:-200% 0}}
