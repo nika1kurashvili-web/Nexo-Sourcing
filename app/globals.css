@@ -79,8 +79,8 @@ hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 
 .filter-bar{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1.4fr) auto;gap:12px;align-items:end;margin-bottom:18px}
 .filter-actions{display:flex;gap:8px;align-items:center}
-.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px;align-items:start}
-.product-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:11px;display:grid;gap:8px;min-width:0}
+.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px;align-items:stretch}
+.product-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:11px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .product-photo{display:block;width:100%;height:125px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#fff}
 .product-photo-empty{display:grid;place-items:center;height:125px;border:1px dashed #cbd2d9;border-radius:10px;color:var(--muted);font-size:13px;background:#fafbfc}
 .product-thumbs{display:flex;gap:5px;flex-wrap:wrap}
@@ -88,11 +88,14 @@ hr{border:0;border-top:1px solid var(--line);margin:18px 0}
 .product-thumb img{display:block;width:40px;height:40px;object-fit:cover;border:1px solid var(--line);border-radius:8px;background:#fff}
 .product-thumb form{position:absolute;top:-6px;right:-6px}
 .thumb-remove{width:20px;height:20px;border-radius:50%;border:1px solid #f0cbc7;background:#fff;color:var(--danger);font-size:13px;line-height:1;cursor:pointer;padding:0}
-.product-title{font-weight:800;font-size:14px;overflow-wrap:anywhere}
+.product-title{font-weight:800;font-size:14px;overflow-wrap:anywhere;line-height:1.3;min-height:2.6em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .badges{display:flex;gap:6px;flex-wrap:wrap}
 .spec-list{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 8px;margin:0;font-size:12px}
 .spec-list dt{color:var(--muted)}.spec-list dd{margin:0;font-weight:700;overflow-wrap:anywhere}
 .product-text{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.product-card .product-text{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.product-card .product-actions{margin-top:auto}
+.product-card .form-grid.two,.product-card .form-grid.three,.product-card .form-grid.four{grid-template-columns:1fr}
 .product-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .approval-card{border:1px solid #efd9a7;background:#fffdf4;border-radius:var(--radius);padding:16px;display:grid;gap:10px;margin-bottom:12px}
 .diff-table{min-width:0;font-size:13px}.diff-table th,.diff-table td{padding:6px 8px}
