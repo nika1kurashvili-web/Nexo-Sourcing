@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null };
+type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean };
 type Order = { id: string; order_no: string; currency: string; status: "sent" | "confirmed"; items: Item[] };
 
 const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -15,6 +15,25 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(item.prepared);
+
+  async function toggleReady(next: boolean) {
+    setBusy(true); setMessage(""); setFailed(false);
+    const before = ready;
+    setReady(next);
+    try {
+      const response = await fetch(`/api/supplier-catalog/${token}/orders`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", referrerPolicy: "no-referrer",
+        body: JSON.stringify({ operation: "set_ready", itemId: item.id, ready: next })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Unable to save.");
+      router.refresh();
+    } catch (error) {
+      setReady(before);
+      setFailed(true); setMessage(error instanceof Error ? error.message : "Unable to save.");
+    } finally { setBusy(false); }
+  }
 
   async function save(price: string | null) {
     setBusy(true); setMessage(""); setFailed(false);
@@ -34,6 +53,10 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
 
   return (
     <tr>
+      <td style={{ textAlign: "center" }}>
+        <input type="checkbox" checked={ready} disabled={busy} onChange={event => void toggleReady(event.target.checked)}
+          aria-label={`${item.name} is prepared`} style={{ width: 22, height: 22 }} />
+      </td>
       <td>{item.sku ?? "—"}</td>
       <td>{item.name}</td>
       <td>{item.quantity.toLocaleString("en-GB")}</td>
@@ -70,9 +93,10 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
               <span className={`badge ${order.status === "confirmed" ? "success" : "warning"}`}>{order.status === "confirmed" ? "Confirmed" : "Open for price suggestions"}</span>
             </div>
             <div className="table-wrap"><table>
-              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Your suggestion</th></tr></thead>
+              <thead><tr><th>Prepared</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Your suggestion</th></tr></thead>
               <tbody>{order.items.map(item => <Line key={item.id} token={token} order={order} item={item} />)}</tbody>
             </table></div>
+            <p className="small muted">Tick "Prepared" when a product is packed and ready, so Nexo can see it. Price suggestions can be sent while the order is open; prepared marks work until the order is finished.</p>
             <p style={{ marginBottom: 0 }}><strong>Total (approved prices): {order.currency} {fmt(Math.round(total * 100) / 100)}</strong></p>
           </div>
         );

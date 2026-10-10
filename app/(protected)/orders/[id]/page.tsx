@@ -44,6 +44,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const status = order.status as OrderStatus;
   const editable = status === "draft" || status === "sent";
   const totals = orderTotals(items, payments.map(payment => payment.amount));
+  const preparedCount = items.filter(item => item.prepared_at).length;
 
   // Products that can still be added (approved products of this supplier).
   const productsResult = editable
@@ -60,6 +61,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </div>
         <div className="badges">
           <span className={`badge ${BADGE[status] ?? ""}`}>{STATUS_LABELS[status]}</span>
+          {items.length > 0 && <span className={`badge ${preparedCount === items.length ? "success" : ""}`}>Prepared {preparedCount} of {items.length}</span>}
         </div>
       </div>
       {error && <div className="notice">{error}</div>}
@@ -88,7 +90,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             {/* Enter inside a field must save, never approve or remove a line: this is the first (default) submit button. */}
             <button type="submit" tabIndex={-1} aria-hidden="true" style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}>Save</button>
             <div className="table-wrap"><table>
-              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price ({order.currency})</th><th>Supplier suggestion</th><th>Line total</th><th></th></tr></thead>
+              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price ({order.currency})</th><th>Supplier suggestion</th><th>Line total</th><th>Prepared</th><th></th></tr></thead>
               <tbody>{items.map(item => {
                 const line = lineTotal(item.quantity, item.unit_price);
                 return (
@@ -108,6 +110,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                         </div>}
                       </div>)}</td>
                     <td>{line === null ? <span className="muted">no price</span> : money(line, order.currency)}</td>
+                    <td>{item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}</td>
                     <td>{editable && <button className="btn danger" type="submit" formAction={removeOrderItemAction} name="item" value={item.id} title="Remove from order">Remove</button>}</td>
                   </tr>
                 );

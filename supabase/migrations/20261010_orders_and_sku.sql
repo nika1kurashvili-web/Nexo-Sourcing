@@ -49,6 +49,8 @@ create table if not exists public.sourcing_order_items (
   -- that only counts after Nexo approves it.
   unit_price numeric(14,4) check (unit_price is null or (unit_price >= 0 and unit_price <= 9999999)),
   proposed_price numeric(14,4) check (proposed_price is null or (proposed_price >= 0 and proposed_price <= 9999999)),
+  -- Set by the supplier when the product is ready (packed). Display only; changes no price.
+  prepared_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -89,11 +91,23 @@ begin
   if not found then raise exception 'Invalid supplier access'; end if;
   if p_payload is null or jsonb_typeof(p_payload) <> 'object' then raise exception 'Invalid request'; end if;
 
-  if p_operation = 'set_price' then
+  if p_operation in ('set_price', 'set_ready') then
     select * into line from public.sourcing_order_items where id = (p_payload->>'item_id')::uuid for update;
     if not found then raise exception 'Invalid supplier access'; end if;
     select * into ord from public.sourcing_orders where id = line.order_id for update;
     if ord.supplier_id <> share.supplier_id then raise exception 'Invalid supplier access'; end if;
+  end if;
+
+  if p_operation = 'set_ready' then
+    -- Preparing goods happens after Nexo confirms, so both "sent" and "confirmed" are open.
+    if ord.status not in ('sent', 'confirmed') then raise exception 'Order is locked'; end if;
+    update public.sourcing_order_items
+      set prepared_at = case when coalesce((p_payload->>'ready')::boolean, false) then coalesce(prepared_at, now()) else null end
+      where id = line.id;
+    return jsonb_build_object('ok', true);
+  end if;
+
+  if p_operation = 'set_price' then
     if ord.status <> 'sent' then raise exception 'Order is locked'; end if;
     if jsonb_typeof(p_payload->'price') = 'null' or not (p_payload ? 'price') then
       new_price := null;

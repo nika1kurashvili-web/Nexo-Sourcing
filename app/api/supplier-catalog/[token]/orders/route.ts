@@ -14,10 +14,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   let body: Record<string, unknown>;
   try { body = await supplierBody(request, 2000); }
   catch { return supplierJson({ error: "Invalid request." }, 400); }
-  if (Object.keys(body).some(key => !["operation", "itemId", "price"].includes(key))
-    || body.operation !== "set_price" || typeof body.itemId !== "string" || !UUID_PATTERN.test(body.itemId)) {
+  if (Object.keys(body).some(key => !["operation", "itemId", "price", "ready"].includes(key))
+    || !["set_price", "set_ready"].includes(String(body.operation)) || typeof body.itemId !== "string" || !UUID_PATTERN.test(body.itemId)) {
     return supplierDenied();
   }
+  if (body.operation === "set_ready") {
+    if (typeof body.ready !== "boolean" || "price" in body) return supplierDenied();
+    try {
+      const { error } = await scope.db.rpc("sourcing_order_supplier", {
+        p_hash: scope.hash, p_operation: "set_ready", p_payload: { item_id: body.itemId, ready: body.ready }
+      });
+      if (error) {
+        const text = String(error.message ?? "");
+        if (text.includes("Order is locked")) return supplierJson({ error: "This order is no longer open." }, 400);
+        if (text.includes("Invalid supplier access")) return supplierDenied();
+        return supplierJson({ error: "Unable to save. Please try again." }, 400);
+      }
+      revalidatePath("/orders");
+      return supplierJson({ ok: true });
+    } catch {
+      return supplierJson({ error: "Unable to save. Please try again." }, 400);
+    }
+  }
+  if ("ready" in body) return supplierDenied();
   let price: number | null = null;
   const raw = body.price;
   if (raw !== null && raw !== "" && raw !== undefined) {

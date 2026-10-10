@@ -34,7 +34,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const orders: any[] = ordersResult.data ?? [];
   const ids = orders.map(order => order.id);
   const [itemsResult, paymentsResult] = ids.length ? await Promise.all([
-    db.from("sourcing_order_items").select("order_id,quantity,unit_price,proposed_price").in("order_id", ids),
+    db.from("sourcing_order_items").select("order_id,quantity,unit_price,proposed_price,prepared_at").in("order_id", ids),
     db.from("sourcing_order_payments").select("order_id,amount").in("order_id", ids)
   ]) : [{ data: [] }, { data: [] }];
   const items: any[] = itemsResult.data ?? [];
@@ -88,6 +88,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <td><Link className="row-link" href={`/orders/${order.id}`}>{order.order_no}</Link></td>
                 <td>{order.sourcing_suppliers?.name ?? "—"}</td>
                 <td><span className={`badge ${BADGE[order.status] ?? ""}`}>{STATUS_LABELS[order.status as OrderStatus] ?? order.status}</span>
+                  {(order.status === "sent" || order.status === "confirmed") && (() => { const own = items.filter(item => item.order_id === order.id); const ready = own.filter(item => item.prepared_at).length; return own.length ? <span className={`badge ${ready === own.length ? "success" : ""}`} style={{ marginLeft: 6 }}>Prepared {ready}/{own.length}</span> : null; })()}
                   {totals.proposals > 0 && <span className="badge warning" style={{ marginLeft: 6 }}>{totals.proposals} price suggestion{totals.proposals === 1 ? "" : "s"}</span>}</td>
                 <td>{money(totals.total, order.currency)}{totals.unpriced > 0 && <div className="small muted">{totals.unpriced} without price</div>}</td>
                 <td>{money(totals.paid, order.currency)}</td>
