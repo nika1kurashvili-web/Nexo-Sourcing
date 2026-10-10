@@ -57,6 +57,14 @@ export function ProductEditor({ mode, suppliers = [], product, photoCount = 0, d
       else setMessage(mode === "create" ? "Product created." : "Product saved.");
       if (mode === "create" && !failedUploads) { form.reset(); }
       router.refresh();
+      if (!failedUploads) {
+        // Fold the form away and bring the card back into view, so the page does not stay scrolled down.
+        const details = form.closest("details");
+        window.setTimeout(() => {
+          if (details) details.open = false;
+          (details?.closest(".product-card") ?? details)?.scrollIntoView({ block: "center", behavior: "smooth" });
+        }, 700);
+      }
     } catch (error) {
       setFailed(true); setMessage(error instanceof Error ? error.message : "Unable to save the product.");
     } finally { setBusy(false); }
