@@ -54,3 +54,18 @@ test("xlsx writer output can be read back, including special characters", () => 
 test("garbage is rejected as an Excel file", () => {
   assert.throws(() => readXlsx(Buffer.from("not a zip file at all, just text")), /Excel/);
 });
+
+import { parseOrderSheet } from "../lib/order-import.ts";
+
+test("order sheet: reads barcode + quantity, merges repeats, reports bad rows", () => {
+  const ok = parseOrderSheet([["Barcode", "Quantity"], ["P00001", "10"], ["p00001", "5"], ["P00002", "2,5"], ["", ""]]);
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.lines.length, 2);
+  assert.equal(ok.lines[0].quantity, 15);
+  assert.equal(ok.lines[1].quantity, 2.5);
+  assert.equal(ok.warnings.length, 1);
+  const bad = parseOrderSheet([["Code", "Qty"], ["A", "0"], ["", "3"], ["B", "x"]]);
+  assert.equal(bad.errors.length, 3);
+  assert.equal(parseOrderSheet([["Name", "Qty"]]).errors.length, 1);
+  assert.equal(parseOrderSheet([]).errors.length, 1);
+});

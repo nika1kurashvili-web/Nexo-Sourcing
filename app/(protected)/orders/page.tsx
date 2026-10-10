@@ -3,6 +3,7 @@ import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { createOrderAction } from "@/app/order-actions";
 import { ORDER_CURRENCIES, STATUS_LABELS, money, orderTotals, type OrderStatus } from "@/lib/orders";
+import { OrderExcelUpload } from "@/components/OrderExcelUpload";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +61,11 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           <label>Note<textarea name="note" maxLength={5000} /></label>
           <div><button className="btn" type="submit">Create Order</button></div>
         </form>
+      </details>
+
+      <details className="card" style={{ marginBottom: 14 }}>
+        <summary>⬆ Upload order from Excel (barcode + quantity)</summary>
+        <OrderExcelUpload suppliers={suppliers.map(supplier => ({ id: supplier.id, name: supplier.name }))} />
       </details>
 
       <form method="get" className="card filter-bar">
