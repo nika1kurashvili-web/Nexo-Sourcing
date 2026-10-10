@@ -11,7 +11,8 @@
     "start": "next start",
     "test:security": "node --test tests/supplier-portal.test.cjs",
     "test:requests": "node --test tests/request-dates.test.cjs",
-    "test:unread": "node --test tests/item-unread.test.cjs"
+    "test:unread": "node --test tests/item-unread.test.cjs",
+    "test:orders": "node --experimental-strip-types --test tests/orders.test.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

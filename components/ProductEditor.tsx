@@ -7,6 +7,7 @@ import { IMAGE_TYPES, MAX_IMAGE_BYTES } from "@/lib/supplier-validation";
 import { MAX_PRODUCT_IMAGES, productInputFromForm } from "@/lib/catalog-validation";
 import { finishProductImageAction, prepareProductImageAction, saveProductAction } from "@/app/product-actions";
 import { ProductFieldInputs } from "@/components/ProductFieldInputs";
+import { shrinkAll } from "@/lib/image-resize";
 
 // Nexo staff form: create a product for any supplier, or edit an existing one, with photos.
 export function ProductEditor({ mode, suppliers = [], product, photoCount = 0, defaultSupplierId = "" }: {
@@ -43,7 +44,7 @@ export function ProductEditor({ mode, suppliers = [], product, photoCount = 0, d
       });
       if (saved.error || !saved.id) throw new Error(saved.error || "Unable to save the product.");
       let failedUploads = 0;
-      for (const file of files) {
+      for (const file of await shrinkAll(files)) {
         const prepared: any = await prepareProductImageAction(saved.id, file.type, file.size);
         if (prepared.error) { failedUploads++; continue; }
         const { error } = await createClient().storage.from("sourcing-files")

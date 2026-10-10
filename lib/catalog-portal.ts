@@ -5,7 +5,7 @@ import { TOKEN_PATTERN } from "@/lib/supplier-validation";
 
 // Deliberate projection: the supplier-facing catalog never selects internal_note.
 export const CATALOG_PRODUCT_COLUMNS =
-  "id,name,description,specifications,price,currency,moq,lead_time_days,box_length_cm,box_width_cm,box_height_cm,weight_kg,qty_in_box,status,created_at,updated_at";
+  "id,sku,name,description,specifications,price,currency,moq,lead_time_days,box_length_cm,box_width_cm,box_height_cm,weight_kg,qty_in_box,status,created_at,updated_at";
 
 export async function catalogScope(token: string) {
   if (!TOKEN_PATTERN.test(token)) throw new Error(INVALID_LINK);
@@ -53,5 +53,39 @@ export async function readCatalog(token: string) {
       images: images.filter(image => image.product_id === product.id).map(image => ({ id: image.id as string, approved: !!image.approved })),
       change: changes.find(change => change.product_id === product.id) ?? null
     }))
+  };
+}
+
+// Orders the supplier may see: only "sent" and "confirmed" ones, never payments or internal notes.
+export async function readSupplierOrders(token: string) {
+  const { db, link } = await catalogScope(token);
+  const [supplier, orders] = await Promise.all([
+    db.from("sourcing_suppliers").select("name").eq("id", link.supplier_id).single(),
+    db.from("sourcing_orders").select("id,order_no,currency,status,sent_at,confirmed_at")
+      .eq("supplier_id", link.supplier_id).in("status", ["sent", "confirmed"]).order("created_at", { ascending: false }).limit(100)
+  ]);
+  if (supplier.error || orders.error) throw new Error(INVALID_LINK);
+  const rows = (orders.data ?? []) as any[];
+  let items: any[] = [];
+  if (rows.length) {
+    const result = await db.from("sourcing_order_items").select("id,order_id,sku,product_name,quantity,unit_price,proposed_price")
+      .in("order_id", rows.map(order => order.id)).order("created_at");
+    if (result.error) throw new Error(INVALID_LINK);
+    items = result.data ?? [];
+  }
+  return {
+    supplierName: supplier.data.name as string,
+    orders: rows.map(order => ({
+      ...order,
+      items: items.filter(item => item.order_id === order.id).map(item => ({
+        id: item.id as string, sku: item.sku as string | null, name: item.product_name as string,
+        quantity: Number(item.quantity),
+        price: item.unit_price === null ? null : Number(item.unit_price),
+        proposed: item.proposed_price === null ? null : Number(item.proposed_price)
+      }))
+    })) as {
+      id: string; order_no: string; currency: string; status: "sent" | "confirmed";
+      items: { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null }[];
+    }[]
   };
 }

@@ -8,6 +8,7 @@ import { MAX_PRODUCT_IMAGES, UUID_PATTERN, parseProductFields } from "@/lib/cata
 import { IMAGE_TYPES, MAX_IMAGE_BYTES } from "@/lib/supplier-validation";
 import { catalogLinkUrl, encryptShareToken } from "@/lib/share-link-crypto";
 import { removeStoragePaths, signedUploadToken, verifyUploadedImage } from "@/lib/catalog-images";
+import { skuCandidates } from "@/lib/photo-match";
 
 // Every action first runs requireSourcingAccess() (staff only). The catalog tables are
 // closed to browser clients, so all reads and writes use the server-only service client.
@@ -165,5 +166,95 @@ export async function revokeCatalogLinkAction(supplierId: string, linkId: string
     return { ok: true };
   } catch (error) {
     return { error: message(error, "Unable to revoke the link.") };
+  }
+}
+
+// ---------------------------------------------------------------- bulk photos named after product codes
+type BulkFile = { name: string; mime: string; size: number };
+type BulkPrepared = { id: string; path: string; uploadToken: string; productId: string } | { error: string };
+
+// Prepares up to 20 uploads at once. Each file is matched to a product of the chosen supplier by its
+// file name (see lib/photo-match.ts). Unmatched files are reported, never guessed.
+export async function prepareBulkImagesAction(supplierId: string, files: BulkFile[]): Promise<{ results?: BulkPrepared[]; error?: string }> {
+  await requireSourcingAccess();
+  try {
+    if (!UUID_PATTERN.test(supplierId) || !Array.isArray(files) || files.length === 0 || files.length > 20) return { error: "Invalid request." };
+    const db = adminDb();
+    const { data: products, error } = await db.from("sourcing_products").select("id,sku").eq("supplier_id", supplierId).limit(20000);
+    if (error) return { error: "Unable to read the products. Run the latest SQL migration first." };
+    const bySku = new Map<string, string>((products ?? []).map((row: any) => [String(row.sku).toLowerCase(), row.id]));
+
+    type Match = { productId: string } | { error: string };
+    const matches: Match[] = files.map((file): Match => {
+      if (!file || typeof file.name !== "string" || !(IMAGE_TYPES as readonly string[]).includes(file.mime)
+        || !Number.isInteger(file.size) || file.size <= 0 || file.size > MAX_IMAGE_BYTES) return { error: "Not a supported image or too large." };
+      for (const candidate of skuCandidates(file.name)) {
+        const id = bySku.get(candidate);
+        if (id) return { productId: id };
+      }
+      return { error: "No product with this code." };
+    });
+
+    const matchedIds = Array.from(new Set(matches.flatMap(match => ("productId" in match ? [match.productId] : []))));
+    const counts = new Map<string, number>();
+    if (matchedIds.length) {
+      const { data: existing } = await db.from("sourcing_product_images").select("product_id").in("product_id", matchedIds);
+      for (const row of existing ?? []) counts.set(row.product_id, (counts.get(row.product_id) ?? 0) + 1);
+    }
+
+    const rows: any[] = [];
+    const results: BulkPrepared[] = matches.map((match, index): BulkPrepared => {
+      if (!("productId" in match)) return { error: match.error };
+      const used = counts.get(match.productId) ?? 0;
+      if (used >= MAX_PRODUCT_IMAGES) return { error: `Already has ${MAX_PRODUCT_IMAGES} photos.` };
+      counts.set(match.productId, used + 1);
+      const id = randomUUID();
+      const path = `catalog/${supplierId}/${match.productId}/${id}`;
+      rows.push({ id, product_id: match.productId, supplier_id: supplierId, object_path: path, mime_type: files[index].mime,
+        byte_size: files[index].size, approved: true, uploaded_by_supplier: false });
+      return { id, path, uploadToken: "", productId: match.productId };
+    });
+    if (rows.length) {
+      const { error: insertError } = await db.from("sourcing_product_images").insert(rows);
+      if (insertError) return { error: "Unable to start the upload." };
+    }
+    await Promise.all(results.map(async (result, index) => {
+      if ("error" in result) return;
+      const token = await signedUploadToken(db, result.path);
+      if (!token) {
+        await db.from("sourcing_product_images").delete().eq("id", result.id);
+        results[index] = { error: "Unable to start the upload." };
+      } else result.uploadToken = token;
+    }));
+    return { results };
+  } catch (error) {
+    return { error: message(error, "Unable to start the upload.") };
+  }
+}
+
+export async function finishBulkImagesAction(ids: string[]): Promise<{ results?: { id: string; ok: boolean; error?: string }[]; error?: string }> {
+  await requireSourcingAccess();
+  try {
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > 20 || ids.some(id => typeof id !== "string" || !UUID_PATTERN.test(id))) return { error: "Invalid request." };
+    const db = adminDb();
+    const { data: images } = await db.from("sourcing_product_images")
+      .select("id,object_path,mime_type,byte_size,ready").in("id", ids).eq("uploaded_by_supplier", false);
+    const byId = new Map<string, any>((images ?? []).map((image: any) => [image.id, image]));
+    const results: { id: string; ok: boolean; error?: string }[] = [];
+    for (let start = 0; start < ids.length; start += 5) {
+      results.push(...await Promise.all(ids.slice(start, start + 5).map(async id => {
+        const image = byId.get(id);
+        if (!image) return { id, ok: false, error: "Unknown image." };
+        if (image.ready) return { id, ok: true };
+        const checked = await verifyUploadedImage(db, image);
+        if (!checked.ok) { await db.from("sourcing_product_images").delete().eq("id", id); return { id, ok: false, error: checked.error }; }
+        const { error } = await db.from("sourcing_product_images").update({ ready: true }).eq("id", id);
+        return error ? { id, ok: false, error: "Unable to save the image." } : { id, ok: true };
+      })));
+    }
+    revalidatePath("/products");
+    return { results };
+  } catch (error) {
+    return { error: message(error, "Unable to save the images.") };
   }
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { requireSourcingAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { BUCKET } from "@/lib/supplier-portal";
@@ -8,6 +9,10 @@ import { decideSubmissionAction, deleteProductAction, deleteProductImageAction }
 import { ProductEditor } from "@/components/ProductEditor";
 import { CatalogLinkControls } from "@/components/CatalogLinkControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { ProductExcel } from "@/components/ProductExcel";
+import { BulkPhotoUpload } from "@/components/BulkPhotoUpload";
+
+const PAGE_SIZE = 48;
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +43,7 @@ function Specs({ product }: { product: any }) {
   const box = [product.box_length_cm, product.box_width_cm, product.box_height_cm];
   return (
     <dl className="spec-list">
+      <dt>Code</dt><dd>{product.sku ?? "—"}</dd>
       <dt>Price</dt><dd>{product.price != null ? `${product.currency} ${number(product.price)}` : "—"}</dd>
       <dt>MOQ</dt><dd>{product.moq != null ? number(product.moq) : "—"}</dd>
       <dt>Lead time</dt><dd>{product.lead_time_days != null ? `${product.lead_time_days} days` : "—"}</dd>
@@ -91,7 +97,7 @@ function DecisionForms({ kind, id, approveLabel, rejectLabel }: { kind: "product
 }
 
 export default async function ProductsPage({ searchParams }: {
-  searchParams: Promise<{ supplier?: string; status?: string; q?: string }>;
+  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string }>;
 }) {
   const params = await searchParams;
   await requireSourcingAccess();
@@ -110,34 +116,43 @@ export default async function ProductsPage({ searchParams }: {
   const statusFilter = params.status === "approved" || params.status === "pending" ? params.status : "";
   const search = (params.q ?? "").replace(/[%_,()*\\]/g, " ").trim().slice(0, 80);
 
-  let productQuery = db.from("sourcing_products").select("*, sourcing_suppliers(name)").order("created_at", { ascending: false }).limit(150);
+  const page = Math.max(1, Math.min(1000, parseInt(params.page ?? "1", 10) || 1));
+  let productQuery = db.from("sourcing_products").select("*, sourcing_suppliers(name)", { count: "exact" })
+    .order("created_at", { ascending: false }).range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
   if (supplierFilter) productQuery = productQuery.eq("supplier_id", supplierFilter);
-  if (search) productQuery = productQuery.ilike("name", `%${search}%`);
+  if (statusFilter) productQuery = productQuery.eq("status", statusFilter);
+  if (search) productQuery = productQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
 
-  const [suppliersResult, productsResult, changesResult, linksResult] = await Promise.all([
+  // Approvals are always loaded in full (not filtered or paged) so nothing can hide from you.
+  const [suppliersResult, productsResult, changesResult, linksResult, pendingResult] = await Promise.all([
     db.from("sourcing_suppliers").select("id,name").order("name"),
     productQuery,
-    db.from("sourcing_product_changes").select("id,product_id,kind,payload,created_at").eq("status", "pending").order("created_at"),
-    db.from("sourcing_catalog_links").select("id,supplier_id,token_encrypted").eq("active", true)
+    db.from("sourcing_product_changes").select("id,product_id,kind,payload,created_at, sourcing_products(*, sourcing_suppliers(name))").eq("status", "pending").order("created_at").limit(200),
+    db.from("sourcing_catalog_links").select("id,supplier_id,token_encrypted").eq("active", true),
+    db.from("sourcing_products").select("*, sourcing_suppliers(name)").eq("status", "pending").order("created_at").limit(200)
   ]);
 
-  const setupMissing = !!(productsResult.error || changesResult.error || linksResult.error);
+  if (productsResult.error?.code === "PGRST103") redirect("/products"); // page number beyond the last page
+  const setupMissing = !!(productsResult.error || changesResult.error || linksResult.error || pendingResult.error);
   if (setupMissing) {
     return (
       <>
         <div className="page-head"><div><h1>Products</h1></div></div>
-        <div className="notice">The product catalog is not set up yet. Run supabase/migrations/20261007_product_catalog.sql in the Supabase SQL Editor, then reload this page.</div>
+        <div className="notice">The product catalog is not set up yet. Run supabase/migrations/20261007_product_catalog.sql, 20261008_catalog_qty_in_box.sql and 20261010_orders_and_sku.sql (in this order, skipping any already run) in the Supabase SQL Editor, then reload this page.</div>
       </>
     );
   }
 
   const suppliers: any[] = suppliersResult.data ?? [];
   const allProducts: any[] = productsResult.data ?? [];
-  const productById = new Map<string, any>(allProducts.map(product => [product.id, product]));
-  const changes: any[] = (changesResult.data ?? []).filter((change: any) => productById.has(change.product_id));
+  const totalProducts: number = productsResult.count ?? allProducts.length;
+  const pendingProducts: any[] = pendingResult.data ?? [];
+  const changes: any[] = (changesResult.data ?? []).filter((change: any) => change.sourcing_products);
+  const productById = new Map<string, any>();
+  for (const change of changes) productById.set(change.product_id, change.sourcing_products);
   const changeByProduct = new Map<string, any>(changes.map(change => [change.product_id, change]));
 
-  const ids = allProducts.map(product => product.id as string);
+  const ids = Array.from(new Set<string>([...allProducts, ...pendingProducts, ...changes.map(change => change.sourcing_products)].map(product => product.id as string)));
   const imageResult = ids.length
     ? await db.from("sourcing_product_images").select("id,product_id,object_path,approved").eq("ready", true).in("product_id", ids).order("created_at")
     : { data: [] };
@@ -156,8 +171,17 @@ export default async function ProductsPage({ searchParams }: {
     linkBySupplier.set(link.supplier_id, { id: link.id, url: token ? catalogLinkUrl(token) : null });
   }
 
-  const pendingProducts = allProducts.filter(product => product.status === "pending");
-  const visible = allProducts.filter(product => !statusFilter || product.status === statusFilter);
+  const visible = allProducts;
+  const pageCount = Math.max(1, Math.ceil(totalProducts / PAGE_SIZE));
+  const pageHref = (target: number) => {
+    const query = new URLSearchParams();
+    if (supplierFilter) query.set("supplier", supplierFilter);
+    if (statusFilter) query.set("status", statusFilter);
+    if (search) query.set("q", params.q ?? "");
+    if (target > 1) query.set("page", String(target));
+    const text = query.toString();
+    return text ? `/products?${text}` : "/products";
+  };
   const waiting = pendingProducts.length + changes.length;
 
   return (
@@ -178,7 +202,7 @@ export default async function ProductsPage({ searchParams }: {
             <option value="">All</option><option value="approved">Approved</option><option value="pending">Waiting for approval</option>
           </select>
         </label>
-        <label>Search by name<input name="q" defaultValue={params.q ?? ""} placeholder="Product name" /></label>
+        <label>Search by name or code<input name="q" defaultValue={params.q ?? ""} placeholder="Name or code" /></label>
         <div className="filter-actions"><button className="btn" type="submit">Filter</button><Link className="btn secondary" href="/products">Reset</Link></div>
       </form>
 
@@ -241,6 +265,15 @@ export default async function ProductsPage({ searchParams }: {
         <ProductEditor mode="create" suppliers={suppliers} defaultSupplierId={supplierFilter} />
       </details>
 
+      <details className="card" style={{ marginBottom: 14 }}>
+        <summary>Excel and bulk photos</summary>
+        <div className="stack" style={{ marginTop: 12 }}>
+          <ProductExcel suppliers={suppliers} defaultSupplierId={supplierFilter} />
+          <hr />
+          <BulkPhotoUpload suppliers={suppliers} defaultSupplierId={supplierFilter} />
+        </div>
+      </details>
+
       <details className="card" style={{ marginBottom: 18 }}>
         <summary>Supplier catalog links ({linkBySupplier.size} active)</summary>
         <p className="small muted">Give a supplier its link so it can add products and request changes. Suppliers only ever see their own products.</p>
@@ -250,7 +283,7 @@ export default async function ProductsPage({ searchParams }: {
         </div>
       </details>
 
-      <div className="small muted" style={{ marginBottom: 10 }}>{visible.length} product{visible.length === 1 ? "" : "s"}{allProducts.length >= 150 ? " (showing the newest 150; use filters to narrow down)" : ""}</div>
+      <div className="small muted" style={{ marginBottom: 10 }}>{totalProducts} product{totalProducts === 1 ? "" : "s"} · page {Math.min(page, pageCount)} of {pageCount}</div>
       {visible.length === 0 ? <div className="card empty">No products found.</div> : (
         <div className="product-grid">
           {visible.map(product => {
@@ -282,6 +315,13 @@ export default async function ProductsPage({ searchParams }: {
               </div>
             );
           })}
+        </div>
+      )}
+      {pageCount > 1 && (
+        <div className="product-actions" style={{ justifyContent: "center", margin: "18px 0" }}>
+          {page > 1 && <Link className="btn secondary" href={pageHref(page - 1)}>← Previous</Link>}
+          <span className="small muted" style={{ alignSelf: "center" }}>Page {Math.min(page, pageCount)} of {pageCount}</span>
+          {page < pageCount && <Link className="btn secondary" href={pageHref(page + 1)}>Next →</Link>}
         </div>
       )}
     </>

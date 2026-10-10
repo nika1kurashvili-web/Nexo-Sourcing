@@ -6,9 +6,10 @@ import { createClient } from "@/lib/supabase/client";
 import { IMAGE_TYPES, MAX_IMAGE_BYTES } from "@/lib/supplier-validation";
 import { MAX_PRODUCT_IMAGES, productInputFromForm } from "@/lib/catalog-validation";
 import { ProductFieldInputs } from "@/components/ProductFieldInputs";
+import { shrinkAll } from "@/lib/image-resize";
 
 type Product = {
-  id: string; name: string; description: string | null; specifications: string | null;
+  id: string; sku: string; name: string; description: string | null; specifications: string | null;
   price: number | null; currency: string; moq: number | null; lead_time_days: number | null;
   box_length_cm: number | null; box_width_cm: number | null; box_height_cm: number | null; weight_kg: number | null; qty_in_box: number | null;
   status: "pending" | "approved";
@@ -84,7 +85,7 @@ function SupplierForm({ token, mode, product, initial }: {
       } else {
         await api(token, { operation: "request_edit", productId, product: fields });
       }
-      const failedUploads = files.length ? await uploadPhotos(token, productId, files) : 0;
+      const failedUploads = files.length ? await uploadPhotos(token, productId, await shrinkAll(files)) : 0;
       if (failedUploads) { setFailed(true); setMessage(`Sent, but ${failedUploads} photo(s) could not be uploaded.`); }
       else setMessage(mode === "create" ? "Product submitted. It shows as approved once Nexo confirms it." : "Edit request sent. Nothing changes until Nexo confirms it.");
       if (mode === "create" && !failedUploads) form.reset();
@@ -148,6 +149,7 @@ function ProductCard({ token, product }: { token: string; product: Product }) {
       </div>
       <div className="product-title">{product.name}</div>
       <dl className="spec-list">
+        <dt>Code</dt><dd>{product.sku}</dd>
         <dt>Price</dt><dd>{product.price != null ? `${product.currency} ${number(product.price)}` : "—"}</dd>
         <dt>MOQ</dt><dd>{product.moq != null ? number(product.moq) : "—"}</dd>
         <dt>Lead time</dt><dd>{product.lead_time_days != null ? `${product.lead_time_days} days` : "—"}</dd>
