@@ -12,7 +12,7 @@ const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDi
 function Line({ token, order, item }: { token: string; order: Order; item: Item }) {
   const router = useRouter();
   const open = order.status === "sent";
-  const [value, setValue] = useState(item.proposed === null ? "" : String(item.proposed));
+  const [value, setValue] = useState(item.proposed !== null ? String(item.proposed) : item.price !== null ? String(item.price) : "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -71,14 +71,14 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
           <div className="stack" style={{ gap: 6 }}>
             <div className="product-actions">
               <input type="number" min="0" step="any" value={value} onChange={event => setValue(event.target.value)}
-                placeholder={`Price (${order.currency})`} style={{ width: 110 }} disabled={busy} aria-label={`Suggested price for ${item.name}`} />
-              <button className="btn sm" type="button" disabled={busy || value.trim() === ""} onClick={() => save(value)}>Suggest</button>
-              {item.proposed !== null && <button className="btn secondary sm" type="button" disabled={busy} onClick={() => { setValue(""); void save(null); }}>Withdraw</button>}
+                placeholder={`New price (${order.currency})`} style={{ width: 110 }} disabled={busy} aria-label={`Suggested price for ${item.name}`} />
+              <button className="btn sm" type="button" disabled={busy || value.trim() === "" || (item.proposed === null && Number(value) === item.price)} onClick={() => save(value)}>Correct price</button>
+              {item.proposed !== null && <button className="btn secondary sm" type="button" disabled={busy} onClick={() => { setValue(item.price === null ? "" : String(item.price)); void save(null); }}>Withdraw</button>}
             </div>
             {item.proposed !== null && <span className="badge warning">Waiting for Nexo: {order.currency} {fmt(item.proposed)}</span>}
             {message && <span role={failed ? "alert" : "status"} className={failed ? "notice" : "small"}>{message}</span>}
           </div>
-        ) : <span className="muted">—</span>}
+        ) : <span className="muted small">Order confirmed: prices are locked. Ask Nexo to reopen it to change a price.</span>}
       </td>
     </tr>
   );
@@ -119,7 +119,7 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
               <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Line total</th><th>Your suggestion</th></tr></thead>
               <tbody>{order.items.map(item => <Line key={item.id} token={token} order={order} item={item} />)}</tbody>
             </table></div></LineSearch>
-            <p className="small muted" style={{ marginBottom: 0 }}>Tick "Prepared" when a product is packed and ready, so Nexo can see it. Price suggestions can be sent while the order is open; prepared marks work until the order is finished.</p>
+            <p className="small muted" style={{ marginBottom: 0 }}>Tick "Prepared" when a product is packed and ready, so Nexo can see it. You can correct a price while the order is open: change the number and press "Correct price"; it is sent to Nexo and applies once Nexo approves it; prepared marks work until the order is finished.</p>
             </div>
           </details>
         );
