@@ -4,8 +4,8 @@ import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import {
-  addOrderItemsAction, addPaymentAction, approveProposalAction, deleteOrderAction, deletePaymentAction,
-  rejectProposalAction, removeOrderItemAction, saveOrderItemsAction, setOrderStatusAction, updateOrderNoteAction
+  addOrderItemsAction, addPaymentAction, approveProposalAction, approveProposalById, deleteOrderAction, deletePaymentAction,
+  rejectProposalById, removeOrderItemById, saveOrderItemsAction, setOrderStatusAction, updateOrderNoteAction
 } from "@/app/order-actions";
 import { STATUS_LABELS, lineTotal, money, orderTotals, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -129,13 +129,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                         {item.proposed_price !== null && <strong>{money(item.proposed_price, order.currency)}</strong>}
                         {item.proposed_quantity !== null && <span className="small">qty {Number(item.proposed_quantity).toLocaleString("en-GB")}</span>}
                         {editable && <div className="product-actions">
-                          <button className="btn sm" type="submit" formAction={approveProposalAction} name="item" value={item.id}>Approve</button>
-                          <button className="btn secondary sm" type="submit" formAction={rejectProposalAction} name="item" value={item.id}>Reject</button>
+                          <button className="btn sm" type="submit" formAction={approveProposalById.bind(null, id, item.id)}>Approve</button>
+                          <button className="btn secondary sm" type="submit" formAction={rejectProposalById.bind(null, id, item.id)}>Reject</button>
                         </div>}
                       </div>)}</td>
                     <td className="num"><strong>{line === null ? <span className="muted">no price</span> : money(line, order.currency)}</strong></td>
                     <td>{item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}</td>
-                    <td>{editable && <button className="btn danger sm" type="submit" formAction={removeOrderItemAction} name="item" value={item.id} title="Remove from order">Remove</button>}</td>
+                    <td>{editable && <button className="btn danger sm" type="submit" formAction={removeOrderItemById.bind(null, id, item.id)} title="Remove from order">Remove</button>}</td>
                   </tr>
                 );
               })}</tbody>

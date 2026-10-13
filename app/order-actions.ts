@@ -115,13 +115,11 @@ export async function saveOrderItemsAction(formData: FormData) {
   back(orderId);
 }
 
-async function decideProposals(formData: FormData, decision: "approve" | "reject") {
+async function decideProposals(orderId: string, itemId: string, decision: "approve" | "reject") {
   await requireSourcingAccess();
-  const orderId = text(formData, "order_id");
   const db = adminDb();
   const order = await loadOrder(db, orderId);
   if (!["draft", "sent"].includes(order.status)) back(orderId, "This order is locked. Reopen it to change it.");
-  const itemId = text(formData, "item");
   let query = db.from("sourcing_order_items").select("id,product_id,proposed_price,proposed_quantity").eq("order_id", orderId)
     .or("proposed_price.not.is.null,proposed_quantity.not.is.null");
   if (itemId) {
@@ -147,19 +145,27 @@ async function decideProposals(formData: FormData, decision: "approve" | "reject
   if (decision === "approve") revalidatePath("/products");
   back(orderId);
 }
-export async function approveProposalAction(formData: FormData) { return decideProposals(formData, "approve"); }
-export async function rejectProposalAction(formData: FormData) { return decideProposals(formData, "reject"); }
+// "All" buttons read the order from the form; per-line buttons get the ids bound in (see ...ById), because the
+// name/value of a server-action button is not reliable before the page is fully interactive.
+export async function approveProposalAction(formData: FormData) { return decideProposals(text(formData, "order_id"), "", "approve"); }
+export async function rejectProposalAction(formData: FormData) { return decideProposals(text(formData, "order_id"), "", "reject"); }
+export async function approveProposalById(orderId: string, itemId: string) { return decideProposals(orderId, itemId, "approve"); }
+export async function rejectProposalById(orderId: string, itemId: string) { return decideProposals(orderId, itemId, "reject"); }
 
-export async function removeOrderItemAction(formData: FormData) {
+async function removeItem(orderId: string, itemId: string) {
   await requireSourcingAccess();
-  const orderId = text(formData, "order_id");
-  const itemId = text(formData, "item");
   const db = adminDb();
   const order = await loadOrder(db, orderId);
   if (!["draft", "sent"].includes(order.status)) back(orderId, "This order is locked. Reopen it to change it.");
-  if (UUID_PATTERN.test(itemId)) await db.from("sourcing_order_items").delete().eq("id", itemId).eq("order_id", orderId);
+  if (!UUID_PATTERN.test(itemId)) back(orderId, "Unable to remove: the product was not identified. Reload the page and try again.");
+  const { data, error } = await db.from("sourcing_order_items").delete().eq("id", itemId).eq("order_id", orderId).select("id");
+  if (error) back(orderId, "Unable to remove the product.");
+  if (!data?.length) back(orderId, "That product was already removed.");
+  await db.from("sourcing_orders").update({ updated_at: new Date().toISOString() }).eq("id", orderId);
   back(orderId);
 }
+export async function removeOrderItemAction(formData: FormData) { return removeItem(text(formData, "order_id"), text(formData, "item")); }
+export async function removeOrderItemById(orderId: string, itemId: string) { return removeItem(orderId, itemId); }
 
 // draft -> sent -> confirmed, plus cancel / reopen. Confirming needs every line priced and no open suggestions.
 export async function setOrderStatusAction(formData: FormData) {
