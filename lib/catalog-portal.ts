@@ -68,7 +68,7 @@ export async function readSupplierOrders(token: string) {
   const rows = (orders.data ?? []) as any[];
   let items: any[] = [];
   if (rows.length) {
-    const result = await db.from("sourcing_order_items").select("id,order_id,product_id,sku,product_name,quantity,unit_price,proposed_price,prepared_at")
+    const result = await db.from("sourcing_order_items").select("id,order_id,product_id,sku,product_name,quantity,unit_price,proposed_price,proposed_quantity,prepared_at")
       .in("order_id", rows.map(order => order.id)).order("created_at");
     if (result.error) throw new Error(INVALID_LINK);
     items = result.data ?? [];
@@ -91,12 +91,13 @@ export async function readSupplierOrders(token: string) {
         quantity: Number(item.quantity),
         price: item.unit_price === null ? null : Number(item.unit_price),
         proposed: item.proposed_price === null ? null : Number(item.proposed_price),
+        proposedQty: item.proposed_quantity === null || item.proposed_quantity === undefined ? null : Number(item.proposed_quantity),
         prepared: item.prepared_at !== null,
         photoId: (item.product_id ? photoOf.get(item.product_id) : undefined) ?? null
       }))
     })) as {
       id: string; order_no: string; currency: string; status: "sent" | "confirmed";
-      items: { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean; photoId: string | null }[];
+      items: { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; proposedQty: number | null; prepared: boolean; photoId: string | null }[];
     }[]
   };
 }

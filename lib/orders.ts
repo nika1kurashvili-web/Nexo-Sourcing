@@ -7,7 +7,7 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
   draft: "Draft", sent: "Sent to supplier", confirmed: "Confirmed", cancelled: "Cancelled"
 };
 
-export type OrderLine = { quantity: number | string; unit_price: number | string | null; proposed_price?: number | string | null };
+export type OrderLine = { quantity: number | string; unit_price: number | string | null; proposed_price?: number | string | null; proposed_quantity?: number | string | null };
 
 const cents = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -24,9 +24,12 @@ export function orderTotals(lines: OrderLine[], paidAmounts: (number | string)[]
   let total = 0, proposedTotal = 0, unpriced = 0, proposals = 0;
   for (const line of lines) {
     const approved = lineTotal(line.quantity, line.unit_price);
-    const proposed = lineTotal(line.quantity, line.proposed_price);
+    const hasPrice = line.proposed_price !== null && line.proposed_price !== undefined && line.proposed_price !== "";
+    const hasQty = line.proposed_quantity !== null && line.proposed_quantity !== undefined && line.proposed_quantity !== "";
+    // What the line would be worth if the supplier's suggestions (price and/or quantity) were approved.
+    const proposed = lineTotal(hasQty ? line.proposed_quantity : line.quantity, hasPrice ? line.proposed_price : line.unit_price);
     if (approved === null) unpriced++;
-    if (proposed !== null) proposals++;
+    if (hasPrice || hasQty) proposals++;
     total += approved ?? 0;
     proposedTotal += proposed ?? approved ?? 0;
   }

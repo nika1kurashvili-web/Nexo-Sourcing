@@ -120,12 +120,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                     <td className="code-cell">{item.sku ?? "—"}</td>
                     <td>{item.product_name}{item.product_id === null && <div className="small muted">removed from catalog</div>}</td>
                     <td>{editable ? <input type="number" name={`qty_${item.id}`} defaultValue={Number(item.quantity)} min="0.01" step="any" style={{ width: 78 }} />
-                      : Number(item.quantity).toLocaleString("en-GB")}</td>
+                      : Number(item.quantity).toLocaleString("en-GB")}
+                      {item.proposed_quantity !== null && <div className="small" style={{ color: "#72510a" }}>supplier: <strong>{Number(item.proposed_quantity).toLocaleString("en-GB")}</strong></div>}</td>
                     <td>{editable ? <input type="number" name={`price_${item.id}`} defaultValue={item.unit_price === null ? "" : Number(item.unit_price)} min="0" step="any" style={{ width: 88 }} />
                       : money(item.unit_price, order.currency)}</td>
-                    <td>{item.proposed_price === null ? <span className="muted">—</span> : (
+                    <td>{item.proposed_price === null && item.proposed_quantity === null ? <span className="muted">—</span> : (
                       <div className="stack" style={{ gap: 6 }}>
-                        <strong>{money(item.proposed_price, order.currency)}</strong>
+                        {item.proposed_price !== null && <strong>{money(item.proposed_price, order.currency)}</strong>}
+                        {item.proposed_quantity !== null && <span className="small">qty {Number(item.proposed_quantity).toLocaleString("en-GB")}</span>}
                         {editable && <div className="product-actions">
                           <button className="btn sm" type="submit" formAction={approveProposalAction} name="item" value={item.id}>Approve</button>
                           <button className="btn secondary sm" type="submit" formAction={rejectProposalAction} name="item" value={item.id}>Reject</button>
@@ -140,7 +142,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </table></div></LineSearch>
             {editable && <div className="product-actions" style={{ marginTop: 12 }}>
               <button className="btn" type="submit">Save quantities and prices</button>
-              {totals.proposals > 0 && <button className="btn secondary" type="submit" formAction={approveProposalAction}>Approve all suggestions ({totals.proposals})</button>}
+              {totals.proposals > 0 && <button className="btn secondary" type="submit" formAction={approveProposalAction}>Approve all suggestions ({totals.proposals}) — updates catalog prices</button>}
             </div>}
           </form>
         )}

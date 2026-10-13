@@ -30,10 +30,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     ["Currency", order.currency],
     ["Status", STATUS_LABELS[order.status as OrderStatus] ?? order.status],
     [],
-    ["Code", "Product", "Quantity", `Price (${order.currency})`, `Line total (${order.currency})`, "Supplier suggestion", "Prepared"],
+    ["Code", "Product", "Quantity", `Price (${order.currency})`, `Line total (${order.currency})`, "Supplier price suggestion", "Supplier quantity suggestion", "Prepared"],
     ...items.map((item): Cell[] => [
       item.sku, item.product_name, num(item.quantity), num(item.unit_price), lineTotal(item.quantity, item.unit_price),
-      num(item.proposed_price), item.prepared_at ? "Yes" : "No"
+      num(item.proposed_price), num(item.proposed_quantity), item.prepared_at ? "Yes" : "No"
     ]),
     [],
     ["", "", "", "Total", totals.total],

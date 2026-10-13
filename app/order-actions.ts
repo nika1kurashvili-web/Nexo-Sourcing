@@ -87,7 +87,7 @@ export async function saveOrderItemsAction(formData: FormData) {
   const db = adminDb();
   const order = await loadOrder(db, orderId);
   if (!["draft", "sent"].includes(order.status)) back(orderId, "This order is locked. Reopen it to change it.");
-  const { data: items } = await db.from("sourcing_order_items").select("id,quantity,unit_price,proposed_price").eq("order_id", orderId);
+  const { data: items } = await db.from("sourcing_order_items").select("id,quantity,unit_price,proposed_price,proposed_quantity").eq("order_id", orderId);
 
   const updates: { id: string; patch: Record<string, unknown> }[] = [];
   try {
@@ -96,7 +96,7 @@ export async function saveOrderItemsAction(formData: FormData) {
       const quantity = parseAmount(formData.get(`qty_${item.id}`), "quantity", { min: 0.01 });
       const price = parseAmount(formData.get(`price_${item.id}`), "price", { allowEmpty: true });
       const patch: Record<string, unknown> = {};
-      if (Number(item.quantity) !== quantity) patch.quantity = quantity;
+      if (Number(item.quantity) !== quantity) { patch.quantity = quantity; patch.proposed_quantity = null; }
       if ((item.unit_price === null ? null : Number(item.unit_price)) !== price) {
         patch.unit_price = price;
         // Nexo typed the price itself, so an older supplier suggestion is obsolete.
@@ -122,19 +122,29 @@ async function decideProposals(formData: FormData, decision: "approve" | "reject
   const order = await loadOrder(db, orderId);
   if (!["draft", "sent"].includes(order.status)) back(orderId, "This order is locked. Reopen it to change it.");
   const itemId = text(formData, "item");
-  let query = db.from("sourcing_order_items").select("id,proposed_price").eq("order_id", orderId).not("proposed_price", "is", null);
+  let query = db.from("sourcing_order_items").select("id,product_id,proposed_price,proposed_quantity").eq("order_id", orderId)
+    .or("proposed_price.not.is.null,proposed_quantity.not.is.null");
   if (itemId) {
     if (!UUID_PATTERN.test(itemId)) back(orderId);
     query = query.eq("id", itemId);
   }
   const { data: items } = await query;
+  const now = new Date().toISOString();
   for (const item of items ?? []) {
-    const patch = decision === "approve"
-      ? { unit_price: item.proposed_price, proposed_price: null }
-      : { proposed_price: null };
-    await db.from("sourcing_order_items").update({ ...patch, updated_at: new Date().toISOString() })
-      .eq("id", item.id).eq("order_id", orderId);
+    const patch: Record<string, unknown> = { proposed_price: null, proposed_quantity: null };
+    if (decision === "approve") {
+      if (item.proposed_price !== null) patch.unit_price = item.proposed_price;
+      if (item.proposed_quantity !== null) patch.quantity = item.proposed_quantity;
+    }
+    const { error } = await db.from("sourcing_order_items").update({ ...patch, updated_at: now }).eq("id", item.id).eq("order_id", orderId);
+    if (error) back(orderId, "Some suggestions could not be applied.");
+    // An approved price also becomes the product's catalog price (in the order's currency).
+    if (decision === "approve" && item.proposed_price !== null && item.product_id) {
+      await db.from("sourcing_products").update({ price: item.proposed_price, currency: order.currency, updated_at: now })
+        .eq("id", item.product_id).eq("supplier_id", order.supplier_id);
+    }
   }
+  if (decision === "approve") revalidatePath("/products");
   back(orderId);
 }
 export async function approveProposalAction(formData: FormData) { return decideProposals(formData, "approve"); }
@@ -170,10 +180,10 @@ export async function setOrderStatusAction(formData: FormData) {
   const patch: Record<string, unknown> = { status: target, updated_at: now };
   if (target === "sent") patch.sent_at = now;
   if (target === "confirmed") {
-    const { data: items } = await db.from("sourcing_order_items").select("unit_price,proposed_price").eq("order_id", orderId);
+    const { data: items } = await db.from("sourcing_order_items").select("unit_price,proposed_price,proposed_quantity").eq("order_id", orderId);
     if (!items?.length) back(orderId, "Add at least one product first.");
     if (items.some((item: any) => item.unit_price === null)) back(orderId, "Every product needs an approved price before you confirm.");
-    if (items.some((item: any) => item.proposed_price !== null)) back(orderId, "Approve or reject the supplier's price suggestions first.");
+    if (items.some((item: any) => item.proposed_price !== null || item.proposed_quantity !== null)) back(orderId, "Approve or reject the supplier's suggestions first.");
     patch.confirmed_at = now;
   } else {
     patch.confirmed_at = null;

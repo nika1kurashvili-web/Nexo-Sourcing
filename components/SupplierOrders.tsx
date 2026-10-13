@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LineSearch } from "@/components/LineSearch";
 
-type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; prepared: boolean; photoId: string | null };
+type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; proposedQty: number | null; prepared: boolean; photoId: string | null };
 type Order = { id: string; order_no: string; currency: string; status: "sent" | "confirmed"; items: Item[] };
 
 const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -13,6 +13,7 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
   const router = useRouter();
   const open = order.status === "sent";
   const [value, setValue] = useState(item.proposed !== null ? String(item.proposed) : item.price !== null ? String(item.price) : "");
+  const [qty, setQty] = useState(item.proposedQty !== null ? String(item.proposedQty) : String(item.quantity));
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failed, setFailed] = useState(false);
@@ -36,19 +37,41 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
     } finally { setBusy(false); }
   }
 
-  async function save(price: string | null) {
+  async function send(operation: "set_price" | "set_quantity", field: "price" | "quantity", value: string | null) {
+    const response = await fetch(`/api/supplier-catalog/${token}/orders`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", referrerPolicy: "no-referrer",
+      body: JSON.stringify({ operation, itemId: item.id, [field]: value })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Unable to save.");
+  }
+
+  const priceChanged = value.trim() !== "" && Number(value) !== (item.proposed ?? item.price);
+  const qtyChanged = qty.trim() !== "" && Number(qty) !== (item.proposedQty ?? item.quantity);
+
+  // Sends only what changed. Nothing applies until Nexo approves it.
+  async function submit() {
     setBusy(true); setMessage(""); setFailed(false);
     try {
-      const response = await fetch(`/api/supplier-catalog/${token}/orders`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, cache: "no-store", referrerPolicy: "no-referrer",
-        body: JSON.stringify({ operation: "set_price", itemId: item.id, price })
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Unable to save the price.");
-      setMessage(price === null ? "Suggestion removed." : "Sent to Nexo for approval.");
+      if (priceChanged) await send("set_price", "price", value);
+      if (qtyChanged) await send("set_quantity", "quantity", qty);
+      setMessage("Sent to Nexo for approval.");
       router.refresh();
     } catch (error) {
-      setFailed(true); setMessage(error instanceof Error ? error.message : "Unable to save the price.");
+      setFailed(true); setMessage(error instanceof Error ? error.message : "Unable to save.");
+    } finally { setBusy(false); }
+  }
+
+  async function withdraw() {
+    setBusy(true); setMessage(""); setFailed(false);
+    try {
+      if (item.proposed !== null) await send("set_price", "price", null);
+      if (item.proposedQty !== null) await send("set_quantity", "quantity", null);
+      setValue(item.price === null ? "" : String(item.price)); setQty(String(item.quantity));
+      setMessage("Suggestion removed.");
+      router.refresh();
+    } catch (error) {
+      setFailed(true); setMessage(error instanceof Error ? error.message : "Unable to save.");
     } finally { setBusy(false); }
   }
 
@@ -63,7 +86,10 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
         : <div className="order-thumb empty">—</div>}</td>
       <td className="code-cell">{item.sku ?? "—"}</td>
       <td>{item.name}</td>
-      <td className="num">{item.quantity.toLocaleString("en-GB")}</td>
+      <td className="num">{open
+        ? <input type="number" min="0.01" step="any" value={qty} onChange={event => setQty(event.target.value)} style={{ width: 84 }} disabled={busy} aria-label={`Quantity for ${item.name}`} />
+        : item.quantity.toLocaleString("en-GB")}
+        {item.proposedQty !== null && <div className="small muted">now {item.quantity.toLocaleString("en-GB")}</div>}</td>
       <td className="num">{item.price === null ? <span className="muted">not set</span> : `${order.currency} ${fmt(item.price)}`}</td>
       <td className="num"><strong>{item.price === null ? <span className="muted">—</span> : `${order.currency} ${fmt(Math.round(item.quantity * item.price * 100) / 100)}`}</strong></td>
       <td>
@@ -72,13 +98,13 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
             <div className="product-actions">
               <input type="number" min="0" step="any" value={value} onChange={event => setValue(event.target.value)}
                 placeholder={`New price (${order.currency})`} style={{ width: 110 }} disabled={busy} aria-label={`Suggested price for ${item.name}`} />
-              <button className="btn sm" type="button" disabled={busy || value.trim() === "" || (item.proposed === null && Number(value) === item.price)} onClick={() => save(value)}>Correct price</button>
-              {item.proposed !== null && <button className="btn secondary sm" type="button" disabled={busy} onClick={() => { setValue(item.price === null ? "" : String(item.price)); void save(null); }}>Withdraw</button>}
+              <button className="btn sm" type="button" disabled={busy || (!priceChanged && !qtyChanged)} onClick={() => void submit()}>Send correction</button>
+              {(item.proposed !== null || item.proposedQty !== null) && <button className="btn secondary sm" type="button" disabled={busy} onClick={() => void withdraw()}>Withdraw</button>}
             </div>
-            {item.proposed !== null && <span className="badge warning">Waiting for Nexo: {order.currency} {fmt(item.proposed)}</span>}
+            {(item.proposed !== null || item.proposedQty !== null) && <span className="badge warning">Waiting for Nexo:{item.proposedQty !== null ? ` qty ${item.proposedQty.toLocaleString("en-GB")}` : ""}{item.proposed !== null ? ` price ${order.currency} ${fmt(item.proposed)}` : ""}</span>}
             {message && <span role={failed ? "alert" : "status"} className={failed ? "notice" : "small"}>{message}</span>}
           </div>
-        ) : <span className="muted small">Order confirmed: prices are locked. Ask Nexo to reopen it to change a price.</span>}
+        ) : <span className="muted small">Order confirmed: prices and quantities are locked. Ask Nexo to reopen it to change them.</span>}
       </td>
     </tr>
   );
@@ -116,10 +142,10 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
               <div className="stat"><div className="muted small">Products</div><div className="stat-value" style={{ fontSize: 20 }}>{order.items.length}</div></div>
             </div>
             <LineSearch><div className="table-wrap order-table"><table>
-              <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity</th><th>Approved price</th><th>Line total</th><th>Your suggestion</th></tr></thead>
+              <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity (edit)</th><th>Approved price</th><th>Line total</th><th>Your correction</th></tr></thead>
               <tbody>{order.items.map(item => <Line key={item.id} token={token} order={order} item={item} />)}</tbody>
             </table></div></LineSearch>
-            <p className="small muted" style={{ marginBottom: 0 }}>Tick "Prepared" when a product is packed and ready, so Nexo can see it. You can correct a price while the order is open: change the number and press "Correct price"; it is sent to Nexo and applies once Nexo approves it; prepared marks work until the order is finished.</p>
+            <p className="small muted" style={{ marginBottom: 0 }}>Tick "Prepared" when a product is packed and ready, so Nexo can see it. You can correct the quantity and/or the price while the order is open: change the numbers and press "Send correction"; it applies once Nexo approves it; prepared marks work until the order is finished.</p>
             </div>
           </details>
         );

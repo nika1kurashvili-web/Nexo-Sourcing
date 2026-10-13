@@ -69,3 +69,10 @@ test("order sheet: reads barcode + quantity, merges repeats, reports bad rows", 
   assert.equal(parseOrderSheet([["Name", "Qty"]]).errors.length, 1);
   assert.equal(parseOrderSheet([]).errors.length, 1);
 });
+
+test("quantity suggestions count as proposals and change the proposed total", () => {
+  const totals = orderTotals([{ quantity: 10, unit_price: 2, proposed_quantity: 12 }, { quantity: 5, unit_price: 1, proposed_price: 3, proposed_quantity: 4 }], []);
+  assert.equal(totals.total, 25);
+  assert.equal(totals.proposals, 2);
+  assert.equal(totals.proposedTotal, 36);
+});

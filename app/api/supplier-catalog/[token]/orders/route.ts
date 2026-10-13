@@ -14,12 +14,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   let body: Record<string, unknown>;
   try { body = await supplierBody(request, 2000); }
   catch { return supplierJson({ error: "Invalid request." }, 400); }
-  if (Object.keys(body).some(key => !["operation", "itemId", "price", "ready"].includes(key))
-    || !["set_price", "set_ready"].includes(String(body.operation)) || typeof body.itemId !== "string" || !UUID_PATTERN.test(body.itemId)) {
+  if (Object.keys(body).some(key => !["operation", "itemId", "price", "quantity", "ready"].includes(key))
+    || !["set_price", "set_quantity", "set_ready"].includes(String(body.operation)) || typeof body.itemId !== "string" || !UUID_PATTERN.test(body.itemId)) {
     return supplierDenied();
   }
   if (body.operation === "set_ready") {
-    if (typeof body.ready !== "boolean" || "price" in body) return supplierDenied();
+    if (typeof body.ready !== "boolean" || "price" in body || "quantity" in body) return supplierDenied();
     try {
       const { error } = await scope.db.rpc("sourcing_order_supplier", {
         p_hash: scope.hash, p_operation: "set_ready", p_payload: { item_id: body.itemId, ready: body.ready }
@@ -37,6 +37,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     }
   }
   if ("ready" in body) return supplierDenied();
+  if (body.operation === "set_quantity") {
+    if ("price" in body) return supplierDenied();
+    let quantity: number | null = null;
+    const rawQty = body.quantity;
+    if (rawQty !== null && rawQty !== "" && rawQty !== undefined) {
+      const text = String(rawQty).trim().replace(",", ".");
+      quantity = /^\d+(\.\d+)?$/.test(text) ? Number(text) : NaN;
+      if (!Number.isFinite(quantity) || quantity < 0.01 || quantity > 9999999) return supplierJson({ error: "Enter a valid quantity." }, 400);
+    }
+    try {
+      const { error } = await scope.db.rpc("sourcing_order_supplier", {
+        p_hash: scope.hash, p_operation: "set_quantity", p_payload: { item_id: body.itemId, quantity }
+      });
+      if (error) {
+        const text = String(error.message ?? "");
+        if (text.includes("Order is locked")) return supplierJson({ error: "This order is no longer open for changes." }, 400);
+        if (text.includes("Invalid supplier access")) return supplierDenied();
+        return supplierJson({ error: "Unable to save the quantity." }, 400);
+      }
+      revalidatePath("/orders");
+      return supplierJson({ ok: true });
+    } catch {
+      return supplierJson({ error: "Unable to save the quantity. Please try again." }, 400);
+    }
+  }
+  if ("quantity" in body) return supplierDenied();
   let price: number | null = null;
   const raw = body.price;
   if (raw !== null && raw !== "" && raw !== undefined) {

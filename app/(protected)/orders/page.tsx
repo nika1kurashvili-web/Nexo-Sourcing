@@ -35,7 +35,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const orders: any[] = ordersResult.data ?? [];
   const ids = orders.map(order => order.id);
   const [itemsResult, paymentsResult] = ids.length ? await Promise.all([
-    db.from("sourcing_order_items").select("order_id,quantity,unit_price,proposed_price,prepared_at").in("order_id", ids),
+    db.from("sourcing_order_items").select("order_id,quantity,unit_price,proposed_price,proposed_quantity,prepared_at").in("order_id", ids),
     db.from("sourcing_order_payments").select("order_id,amount").in("order_id", ids)
   ]) : [{ data: [] }, { data: [] }];
   const items: any[] = itemsResult.data ?? [];
