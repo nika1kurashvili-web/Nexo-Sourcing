@@ -21,13 +21,14 @@ export function lineTotal(quantity: unknown, price: unknown): number | null {
 // total counts only prices Nexo approved. proposedTotal shows what the total would be if
 // every supplier proposal were approved (proposal wins over the approved price on a line).
 export function orderTotals(lines: OrderLine[], paidAmounts: (number | string)[]) {
-  let total = 0, proposedTotal = 0, unpriced = 0, proposals = 0;
+  let total = 0, proposedTotal = 0, unpriced = 0, proposals = 0, totalQuantity = 0;
   for (const line of lines) {
     const approved = lineTotal(line.quantity, line.unit_price);
     const hasPrice = line.proposed_price !== null && line.proposed_price !== undefined && line.proposed_price !== "";
     const hasQty = line.proposed_quantity !== null && line.proposed_quantity !== undefined && line.proposed_quantity !== "";
     // What the line would be worth if the supplier's suggestions (price and/or quantity) were approved.
     const proposed = lineTotal(hasQty ? line.proposed_quantity : line.quantity, hasPrice ? line.proposed_price : line.unit_price);
+    totalQuantity += Number(line.quantity) || 0;
     if (approved === null) unpriced++;
     if (hasPrice || hasQty) proposals++;
     total += approved ?? 0;
@@ -35,7 +36,7 @@ export function orderTotals(lines: OrderLine[], paidAmounts: (number | string)[]
   }
   const paid = cents(paidAmounts.reduce<number>((sum, amount) => sum + Number(amount || 0), 0));
   total = cents(total);
-  return { total, proposedTotal: cents(proposedTotal), paid, balance: cents(total - paid), unpriced, proposals };
+  return { total, proposedTotal: cents(proposedTotal), paid, balance: cents(total - paid), unpriced, proposals, totalQuantity: cents(totalQuantity) };
 }
 
 export function money(value: number | string | null | undefined, currency: string) {

@@ -149,6 +149,8 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       </div>
 
       <div className="grid-4" style={{ marginBottom: 14 }}>
+        <div className="stat"><div className="muted small">Total quantity</div><div className="stat-value" style={{ fontSize: 22 }}>{totals.totalQuantity.toLocaleString("en-GB")} pcs</div>
+          <div className="small muted">{items.length} product{items.length === 1 ? "" : "s"}</div></div>
         <div className="stat"><div className="muted small">Total</div><div className="stat-value" style={{ fontSize: 22 }}>{money(totals.total, order.currency)}</div>
           {totals.unpriced > 0 && <div className="small muted">{totals.unpriced} product(s) without an approved price</div>}</div>
         <div className="stat"><div className="muted small">Paid</div><div className="stat-value" style={{ fontSize: 22 }}>{money(totals.paid, order.currency)}</div></div>

@@ -118,12 +118,13 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
       {orders.map(order => {
         const total = order.items.reduce((sum, item) => sum + (item.price === null ? 0 : Math.round(item.quantity * item.price * 100) / 100), 0);
         const prepared = order.items.filter(item => item.prepared).length;
+        const totalQty = Math.round(order.items.reduce((sum, item) => sum + item.quantity, 0) * 100) / 100;
         const waiting = order.items.filter(item => item.proposed !== null).length;
         const unpriced = order.items.filter(item => item.price === null).length;
         return (
           <details className="card order-fold" key={order.id}>
             <summary className="order-fold-head">
-              <span className="order-fold-title"><strong>{order.order_no}</strong><span className="muted small">{order.currency} · {order.items.length} product{order.items.length === 1 ? "" : "s"} · Prepared {prepared}/{order.items.length}</span></span>
+              <span className="order-fold-title"><strong>{order.order_no}</strong><span className="muted small">{order.currency} · {order.items.length} product{order.items.length === 1 ? "" : "s"} · {totalQty.toLocaleString("en-GB")} pcs · Prepared {prepared}/{order.items.length}</span></span>
               <span className="order-fold-end">
                 <strong>{order.currency} {fmt(Math.round(total * 100) / 100)}</strong>
                 {waiting > 0 && <span className="badge warning">{waiting} waiting</span>}
@@ -139,7 +140,7 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
                 <div className="small muted">tick each packed product</div></div>
               <div className="stat"><div className="muted small">Waiting for Nexo</div><div className="stat-value" style={{ fontSize: 20 }}>{waiting}</div>
                 <div className="small muted">price suggestion{waiting === 1 ? "" : "s"}</div></div>
-              <div className="stat"><div className="muted small">Products</div><div className="stat-value" style={{ fontSize: 20 }}>{order.items.length}</div></div>
+              <div className="stat"><div className="muted small">Total quantity</div><div className="stat-value" style={{ fontSize: 20 }}>{totalQty.toLocaleString("en-GB")} pcs</div><div className="small muted">{order.items.length} product{order.items.length === 1 ? "" : "s"}</div></div>
             </div>
             <LineSearch><div className="table-wrap order-table"><table>
               <thead><tr><th>Prepared</th><th>Photo</th><th>Code</th><th>Product</th><th>Quantity (edit)</th><th>Approved price</th><th>Line total</th><th>Your correction</th></tr></thead>

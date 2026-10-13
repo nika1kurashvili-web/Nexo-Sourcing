@@ -76,3 +76,7 @@ test("quantity suggestions count as proposals and change the proposed total", ()
   assert.equal(totals.proposals, 2);
   assert.equal(totals.proposedTotal, 36);
 });
+
+test("total quantity adds up all lines", () => {
+  assert.equal(orderTotals([{ quantity: 10, unit_price: 1 }, { quantity: 20, unit_price: null }], []).totalQuantity, 30);
+});

@@ -86,7 +86,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
       {orders.length === 0 ? <div className="card empty">No orders yet.</div> : (
         <div className="card"><div className="table-wrap"><table>
-          <thead><tr><th>Order</th><th>Supplier</th><th>Status</th><th>Total</th><th>Paid</th><th>Balance</th><th>Created</th></tr></thead>
+          <thead><tr><th>Order</th><th>Supplier</th><th>Status</th><th>Qty</th><th>Total</th><th>Paid</th><th>Balance</th><th>Created</th></tr></thead>
           <tbody>{orders.map(order => {
             const totals = orderTotals(items.filter(item => item.order_id === order.id), payments.filter(p => p.order_id === order.id).map(p => p.amount));
             return (
@@ -96,6 +96,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <td><span className={`badge ${BADGE[order.status] ?? ""}`}>{STATUS_LABELS[order.status as OrderStatus] ?? order.status}</span>
                   {(order.status === "sent" || order.status === "confirmed") && (() => { const own = items.filter(item => item.order_id === order.id); const ready = own.filter(item => item.prepared_at).length; return own.length ? <span className={`badge ${ready === own.length ? "success" : ""}`} style={{ marginLeft: 6 }}>Prepared {ready}/{own.length}</span> : null; })()}
                   {totals.proposals > 0 && <span className="badge warning" style={{ marginLeft: 6 }}>{totals.proposals} price suggestion{totals.proposals === 1 ? "" : "s"}</span>}</td>
+                <td>{totals.totalQuantity.toLocaleString("en-GB")}</td>
                 <td>{money(totals.total, order.currency)}{totals.unpriced > 0 && <div className="small muted">{totals.unpriced} without price</div>}</td>
                 <td>{money(totals.paid, order.currency)}</td>
                 <td><strong>{money(totals.balance, order.currency)}</strong></td>

@@ -36,6 +36,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       num(item.proposed_price), num(item.proposed_quantity), item.prepared_at ? "Yes" : "No"
     ]),
     [],
+    ["", "Total quantity", totals.totalQuantity],
     ["", "", "", "Total", totals.total],
     ["", "", "", "Paid", totals.paid],
     ["", "", "", totals.balance < 0 ? "Overpaid" : "Remaining", Math.abs(totals.balance)]
