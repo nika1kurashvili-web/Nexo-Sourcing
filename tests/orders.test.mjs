@@ -80,3 +80,24 @@ test("quantity suggestions count as proposals and change the proposed total", ()
 test("total quantity adds up all lines", () => {
   assert.equal(orderTotals([{ quantity: 10, unit_price: 1 }, { quantity: 20, unit_price: null }], []).totalQuantity, 30);
 });
+
+import { computeCost, COST_DEFAULTS } from "../lib/landed-cost.ts";
+
+test("landed cost: CNY price, transport by the larger of volume and weight, customs on price + transport", () => {
+  const product = { price: 10, currency: "CNY", qty_in_box: 100, box_length_cm: 60, box_width_cm: 60, box_height_cm: 120, weight_kg: 20 };
+  const cost = computeCost(product, COST_DEFAULTS);
+  assert.ok(cost.ok);
+  assert.equal(cost.basis, "volume");
+  assert.ok(Math.abs(cost.price - 10 * 1.03 / 2.49) < 1e-9);
+  assert.ok(Math.abs(cost.transport - 0.432 / 100 * 270 * 2.65) < 1e-9);
+  assert.ok(Math.abs(cost.total - (cost.price + cost.transport) * 1.18) < 1e-9);
+  const heavy = computeCost({ ...product, weight_kg: 400 }, COST_DEFAULTS);
+  assert.ok(heavy.ok && heavy.basis === "weight");
+  assert.ok(Math.abs(heavy.transport - 400 / 100 * 1.1 * 2.65) < 1e-9);
+  const usd = computeCost({ ...product, currency: "USD" }, COST_DEFAULTS);
+  assert.ok(usd.ok && Math.abs(usd.price - 10 * 1.03 * 2.65) < 1e-9);
+  assert.equal(computeCost({ ...product, qty_in_box: null }, COST_DEFAULTS).ok, false);
+  assert.equal(computeCost({ price: 5, currency: "EUR", qty_in_box: 1, weight_kg: 1 }, COST_DEFAULTS).ok, false);
+  const weightOnly = computeCost({ price: 5, currency: "GEL", qty_in_box: 30, weight_kg: 2 }, COST_DEFAULTS);
+  assert.ok(weightOnly.ok && Math.abs(weightOnly.transport - 2 / 30 * 1.1 * 2.65) < 1e-9);
+});

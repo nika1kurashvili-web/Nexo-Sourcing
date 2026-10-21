@@ -9,6 +9,8 @@ import { decideSubmissionAction, deleteProductAction, deleteProductImageAction }
 import { ProductEditor } from "@/components/ProductEditor";
 import { CatalogLinkControls } from "@/components/CatalogLinkControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { saveCostSettingsAction } from "@/app/cost-actions";
+import { COST_DEFAULTS, COST_FIELDS, computeCost, type CostSettings } from "@/lib/landed-cost";
 import { ProductExcel } from "@/components/ProductExcel";
 import { BulkPhotoUpload } from "@/components/BulkPhotoUpload";
 
@@ -39,7 +41,8 @@ function show(value: unknown) {
   return typeof value === "number" ? number(value) : String(value);
 }
 
-function Specs({ product }: { product: any }) {
+function Specs({ product, settings }: { product: any; settings: CostSettings }) {
+  const cost = computeCost(product, settings);
   const box = [product.box_length_cm, product.box_width_cm, product.box_height_cm];
   return (
     <dl className="spec-list">
@@ -50,6 +53,14 @@ function Specs({ product }: { product: any }) {
       <dt>Box (L×W×H)</dt><dd>{box.some(value => value != null) ? `${box.map(value => (value != null ? number(value) : "?")).join(" × ")} cm` : "—"}</dd>
       <dt>Weight</dt><dd>{product.weight_kg != null ? `${number(product.weight_kg)} kg` : "—"}</dd>
       <dt>Qty in box</dt><dd>{product.qty_in_box != null ? number(product.qty_in_box) : "—"}</dd>
+      {/* Staff only: this page is never shown to suppliers. */}
+      <dt className="cost-row">Cost (GEL)</dt>
+      <dd className="cost-row">{cost.ok
+        ? <span title={`Price ${cost.price.toFixed(2)} + transport ${cost.transport.toFixed(2)} (by ${cost.basis}) + customs ${cost.customs.toFixed(2)}`}>
+            <strong>₾ {cost.total.toFixed(2)}</strong>
+            <span className="small muted" style={{ display: "block" }}>{cost.price.toFixed(2)} + {cost.transport.toFixed(2)} ({cost.basis === "volume" ? "m³" : "kg"}) + {cost.customs.toFixed(2)}</span>
+          </span>
+        : <span className="muted small">{cost.reason}</span>}</dd>
     </dl>
   );
 }
@@ -97,7 +108,7 @@ function DecisionForms({ kind, id, approveLabel, rejectLabel }: { kind: "product
 }
 
 export default async function ProductsPage({ searchParams }: {
-  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string }>;
+  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string; cost_error?: string }>;
 }) {
   const params = await searchParams;
   await requireSourcingAccess();
@@ -112,6 +123,7 @@ export default async function ProductsPage({ searchParams }: {
   }
 
   const db: any = createAdminClient();
+  const settingsPromise = db.from("sourcing_settings").select("key,value");
   const supplierFilter = params.supplier && UUID_PATTERN.test(params.supplier) ? params.supplier : "";
   const statusFilter = params.status === "approved" || params.status === "pending" ? params.status : "";
   const search = (params.q ?? "").replace(/[%_,()*\\]/g, " ").trim().slice(0, 80);
@@ -157,6 +169,10 @@ export default async function ProductsPage({ searchParams }: {
     ? await db.from("sourcing_product_images").select("id,product_id,object_path,approved").eq("ready", true).in("product_id", ids).order("created_at")
     : { data: [] };
   const images: any[] = imageResult.data ?? [];
+  const settingsResult = await settingsPromise;
+  const costSettings: CostSettings = { ...COST_DEFAULTS };
+  for (const row of settingsResult.data ?? []) if (row.key in costSettings) (costSettings as any)[row.key] = Number(row.value);
+  const costTableMissing = !!settingsResult.error;
 
   const urls: Record<string, string> = {};
   if (images.length) {
@@ -214,7 +230,7 @@ export default async function ProductsPage({ searchParams }: {
               <div className="badges"><span className="badge warning">New product from supplier</span><span className="badge">{product.sourcing_suppliers?.name ?? "Supplier"}</span></div>
               <div className="product-title">{product.name}</div>
               <Photos images={imagesOf(product.id)} urls={urls} removable={false} />
-              <Specs product={product} />
+              <Specs product={product} settings={costSettings} />
               {product.description && <p className="product-text">{product.description}</p>}
               {product.specifications && <p className="product-text">{product.specifications}</p>}
               <DecisionForms kind="product" id={product.id} approveLabel="Approve product" rejectLabel="Reject & delete" />
@@ -265,6 +281,21 @@ export default async function ProductsPage({ searchParams }: {
         <ProductEditor mode="create" suppliers={suppliers} defaultSupplierId={supplierFilter} />
       </details>
 
+      <details className="card" style={{ marginBottom: 14 }} open={!!params.cost_error}>
+        <summary>Cost formula numbers (only you see them)</summary>
+        {params.cost_error && <div className="notice" style={{ marginTop: 10 }}>{params.cost_error}</div>}
+        {costTableMissing && <div className="notice" style={{ marginTop: 10 }}>Default numbers are used. To change them, run supabase/migrations/20261013_cost_settings.sql in the Supabase SQL Editor.</div>}
+        <p className="small muted">Cost per piece in GEL = price (CNY: price × coefficient ÷ rate, USD: price × coefficient × rate) + transport (the larger of volume and weight) + customs on (price + transport). The product cards show it under "Qty in box".</p>
+        <form action={saveCostSettingsAction} className="form-grid two" style={{ marginTop: 10 }}>
+          {COST_FIELDS.map(field => (
+            <label key={field.key}>{field.label}
+              <input name={field.key} defaultValue={String(costSettings[field.key])} inputMode="decimal" required />
+            </label>
+          ))}
+          <div><button className="btn" type="submit">Save numbers</button></div>
+        </form>
+      </details>
+
       <details className="card" style={{ marginBottom: 14 }}>
         <summary>Excel and bulk photos</summary>
         <div className="stack" style={{ marginTop: 12 }}>
@@ -298,7 +329,7 @@ export default async function ProductsPage({ searchParams }: {
                   {change && <span className="badge warning">{change.kind === "delete" ? "Deletion requested" : "Edit requested"}</span>}
                 </div>
                 <div className="product-title">{product.name}</div>
-                <Specs product={product} />
+                <Specs product={product} settings={costSettings} />
                 {product.description && <p className="product-text">{product.description}</p>}
                 {product.specifications && <p className="product-text muted">{product.specifications}</p>}
                 {product.internal_note && <p className="product-text"><strong>Internal:</strong> {product.internal_note}</p>}

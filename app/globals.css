@@ -138,3 +138,5 @@ a:hover > .order-thumb{border-color:#7a8796}
 .order-fold-chevron{transition:transform .15s;color:var(--muted)}
 .order-fold[open] .order-fold-chevron{transform:rotate(180deg)}
 .order-fold[open] > .order-fold-head{border-bottom:1px solid var(--line)}
+.spec-list .cost-row{margin-top:4px;padding-top:5px;border-top:1px dashed var(--line);color:#1f5f3a}
+.spec-list dt.cost-row{color:#1f5f3a}
