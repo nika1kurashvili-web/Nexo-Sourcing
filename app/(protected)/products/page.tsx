@@ -10,7 +10,7 @@ import { ProductEditor } from "@/components/ProductEditor";
 import { CatalogLinkControls } from "@/components/CatalogLinkControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { saveCostSettingsAction } from "@/app/cost-actions";
-import { COST_DEFAULTS, COST_FIELDS, computeCost, type CostSettings } from "@/lib/landed-cost";
+import { COST_DEFAULTS, COST_FIELDS, SHIPPING_METHODS, computeCost, settingKey, type CostSettings } from "@/lib/landed-cost";
 import { ProductExcel } from "@/components/ProductExcel";
 import { BulkPhotoUpload } from "@/components/BulkPhotoUpload";
 
@@ -54,9 +54,10 @@ function Specs({ product, settings }: { product: any; settings: CostSettings }) 
       <dt>Weight</dt><dd>{product.weight_kg != null ? `${number(product.weight_kg)} kg` : "—"}</dd>
       <dt>Qty in box</dt><dd>{product.qty_in_box != null ? number(product.qty_in_box) : "—"}</dd>
       {/* Staff only: this page is never shown to suppliers. */}
+      <dt className="cost-row">Shipping</dt><dd className="cost-row">{product.shipping_method === "air" ? "✈ Air" : "🚚 Land"}</dd>
       <dt className="cost-row">Cost (GEL)</dt>
       <dd className="cost-row">{cost.ok
-        ? <span title={`Price ${cost.price.toFixed(2)} + transport ${cost.transport.toFixed(2)} (by ${cost.basis}) + customs ${cost.customs.toFixed(2)}`}>
+        ? <span title={`Price ${cost.price.toFixed(2)} + transport ${cost.transport.toFixed(2)} (${cost.method}, by ${cost.basis}) + customs ${cost.customs.toFixed(2)}`}>
             <strong>₾ {cost.total.toFixed(2)}</strong>
             <span className="small muted" style={{ display: "block" }}>{cost.price.toFixed(2)} + {cost.transport.toFixed(2)} ({cost.basis === "volume" ? "m³" : "kg"}) + {cost.customs.toFixed(2)}</span>
           </span>
@@ -170,8 +171,12 @@ export default async function ProductsPage({ searchParams }: {
     : { data: [] };
   const images: any[] = imageResult.data ?? [];
   const settingsResult = await settingsPromise;
-  const costSettings: CostSettings = { ...COST_DEFAULTS };
-  for (const row of settingsResult.data ?? []) if (row.key in costSettings) (costSettings as any)[row.key] = Number(row.value);
+  const costSettings: CostSettings = { land: { ...COST_DEFAULTS.land }, air: { ...COST_DEFAULTS.air } };
+  const stored = new Map<string, number>((settingsResult.data ?? []).map((row: any) => [row.key as string, Number(row.value)]));
+  for (const method of SHIPPING_METHODS) for (const field of COST_FIELDS) {
+    const value = stored.get(settingKey(method.value, field.key));
+    if (value !== undefined && Number.isFinite(value)) costSettings[method.value][field.key] = value;
+  }
   const costTableMissing = !!settingsResult.error;
 
   const urls: Record<string, string> = {};
@@ -284,15 +289,24 @@ export default async function ProductsPage({ searchParams }: {
       <details className="card" style={{ marginBottom: 14 }} open={!!params.cost_error}>
         <summary>Cost formula numbers (only you see them)</summary>
         {params.cost_error && <div className="notice" style={{ marginTop: 10 }}>{params.cost_error}</div>}
-        {costTableMissing && <div className="notice" style={{ marginTop: 10 }}>Default numbers are used. To change them, run supabase/migrations/20261013_cost_settings.sql in the Supabase SQL Editor.</div>}
-        <p className="small muted">Cost per piece in GEL = price (CNY: price × coefficient ÷ rate, USD: price × coefficient × rate) + transport (the larger of volume and weight) + customs on (price + transport). The product cards show it under "Qty in box".</p>
-        <form action={saveCostSettingsAction} className="form-grid two" style={{ marginTop: 10 }}>
-          {COST_FIELDS.map(field => (
-            <label key={field.key}>{field.label}
-              <input name={field.key} defaultValue={String(costSettings[field.key])} inputMode="decimal" required />
-            </label>
-          ))}
-          <div><button className="btn" type="submit">Save numbers</button></div>
+        {costTableMissing && <div className="notice" style={{ marginTop: 10 }}>Default numbers are used. To change them, run supabase/migrations/20261013_cost_settings.sql and 20261014_shipping_method.sql in the Supabase SQL Editor.</div>}
+        <p className="small muted">Each product has a Shipping method (Land or Air, chosen in the product editor); its cost uses that method's numbers. Cost per piece in GEL = price (CNY: price × coefficient ÷ rate, USD: price × coefficient × rate) + transport (the larger of volume and weight) + customs on (price + transport). The product cards show it under "Qty in box".</p>
+        <form action={saveCostSettingsAction} style={{ marginTop: 10 }}>
+          <div className="form-grid two">
+            {SHIPPING_METHODS.map(method => (
+              <fieldset key={method.value} className="cost-set">
+                <legend>{method.value === "air" ? "✈ " : "🚚 "}{method.label}</legend>
+                <div className="form-grid">
+                  {COST_FIELDS.map(field => (
+                    <label key={field.key}>{field.label}
+                      <input name={`${method.value}__${field.key}`} defaultValue={String(costSettings[method.value][field.key])} inputMode="decimal" required />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            ))}
+          </div>
+          <div style={{ marginTop: 12 }}><button className="btn" type="submit">Save numbers</button></div>
         </form>
       </details>
 

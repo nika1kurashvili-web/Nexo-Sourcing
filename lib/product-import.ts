@@ -16,6 +16,7 @@ export const SHEET_COLUMNS: { key: string; label: string; width: number; aliases
   { key: "box_height_cm", label: "Box height (cm)", width: 14, aliases: ["boxheight"] },
   { key: "weight_kg", label: "Weight (kg)", width: 12, aliases: ["weight"] },
   { key: "qty_in_box", label: "Quantity in box", width: 14, aliases: ["qtyinbox", "quantityinbox", "pcsperbox"] },
+  { key: "shipping_method", label: "Shipping (land/air)", width: 14, aliases: ["shipping", "shippingmethod", "shipmethod"] },
   { key: "internal_note", label: "Internal note (Nexo only)", width: 30, aliases: ["internalnote", "note"] }
 ];
 
@@ -71,6 +72,10 @@ export function parseProductSheet(sheet: string[][]): ImportParse {
       // Excel in some regions stores decimals as text with a comma.
       if ((PRODUCT_NUMBERS as readonly string[]).includes(key) && /^\d+,\d+$/.test(value)) value = value.replace(",", ".");
       if (key === "currency") value = value.toUpperCase();
+      if (key === "shipping_method") {
+        const lower = value.toLowerCase();
+        value = lower === "სახმელეთო" ? "land" : lower === "საჰაერო" ? "air" : lower;
+      }
       input[key] = value;
     });
     let fields;

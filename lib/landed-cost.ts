@@ -7,13 +7,29 @@
 //   customs       = (price in GEL + transport) × customs
 //   cost          = price in GEL + transport + customs
 
-export type CostSettings = {
+// Each shipping method (land / air) has its own set of numbers.
+export type CostParams = {
   markup: number; cny_per_gel: number; usd_gel: number; usd_per_m3: number; usd_per_kg: number; customs: number;
 };
+export type ShippingMethod = "land" | "air";
+export type CostSettings = Record<ShippingMethod, CostParams>;
 
-export const COST_DEFAULTS: CostSettings = { markup: 1.03, cny_per_gel: 2.49, usd_gel: 2.65, usd_per_m3: 270, usd_per_kg: 1.1, customs: 0.18 };
+export const SHIPPING_METHODS: { value: ShippingMethod; label: string }[] = [
+  { value: "land", label: "Land (სახმელეთო)" },
+  { value: "air", label: "Air (საჰაერო)" }
+];
 
-export const COST_FIELDS: { key: keyof CostSettings; label: string; hint: string }[] = [
+const LAND_DEFAULTS: CostParams = { markup: 1.03, cny_per_gel: 2.49, usd_gel: 2.65, usd_per_m3: 270, usd_per_kg: 1.1, customs: 0.18 };
+export const COST_DEFAULTS: CostSettings = { land: { ...LAND_DEFAULTS }, air: { ...LAND_DEFAULTS } };
+
+// Settings are stored as key/value rows: land keys are plain, air keys have the "air_" prefix.
+export const settingKey = (method: ShippingMethod, key: keyof CostParams) => (method === "air" ? `air_${key}` : key);
+
+export function normalizeShipping(value: unknown): ShippingMethod {
+  return String(value ?? "").toLowerCase() === "air" ? "air" : "land";
+}
+
+export const COST_FIELDS: { key: keyof CostParams; label: string; hint: string }[] = [
   { key: "markup", label: "Price coefficient (CNY and USD prices)", hint: "1.03" },
   { key: "cny_per_gel", label: "CNY ÷ this number = GEL", hint: "2.49" },
   { key: "usd_gel", label: "USD × this number = GEL", hint: "2.65" },
@@ -23,7 +39,7 @@ export const COST_FIELDS: { key: keyof CostSettings; label: string; hint: string
 ];
 
 export type CostResult =
-  | { ok: true; total: number; price: number; transport: number; customs: number; basis: "volume" | "weight"; volume: number | null; weight: number | null }
+  | { ok: true; method: ShippingMethod; total: number; price: number; transport: number; customs: number; basis: "volume" | "weight"; volume: number | null; weight: number | null }
   | { ok: false; reason: string };
 
 const positive = (value: unknown) => {
@@ -33,9 +49,11 @@ const positive = (value: unknown) => {
 };
 
 export function computeCost(
-  product: { price?: unknown; currency?: unknown; qty_in_box?: unknown; weight_kg?: unknown; box_length_cm?: unknown; box_width_cm?: unknown; box_height_cm?: unknown },
-  settings: CostSettings
+  product: { shipping_method?: unknown; price?: unknown; currency?: unknown; qty_in_box?: unknown; weight_kg?: unknown; box_length_cm?: unknown; box_width_cm?: unknown; box_height_cm?: unknown },
+  allSettings: CostSettings
 ): CostResult {
+  const method = normalizeShipping(product.shipping_method);
+  const settings = allSettings[method];
   const price = positive(product.price);
   if (price === null) return { ok: false, reason: "Set the price" };
   const currency = String(product.currency ?? "").toUpperCase();
@@ -56,5 +74,5 @@ export function computeCost(
   const useVolume = volume !== null && (weight === null || volume >= weight);
   const transport = useVolume ? (volume as number) : (weight as number);
   const customs = (priceGel + transport) * settings.customs;
-  return { ok: true, total: priceGel + transport + customs, price: priceGel, transport, customs, basis: useVolume ? "volume" : "weight", volume, weight };
+  return { ok: true, method, total: priceGel + transport + customs, price: priceGel, transport, customs, basis: useVolume ? "volume" : "weight", volume, weight };
 }

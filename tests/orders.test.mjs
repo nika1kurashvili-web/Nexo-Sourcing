@@ -101,3 +101,14 @@ test("landed cost: CNY price, transport by the larger of volume and weight, cust
   const weightOnly = computeCost({ price: 5, currency: "GEL", qty_in_box: 30, weight_kg: 2 }, COST_DEFAULTS);
   assert.ok(weightOnly.ok && Math.abs(weightOnly.transport - 2 / 30 * 1.1 * 2.65) < 1e-9);
 });
+
+test("air products use the air numbers", () => {
+  const settings = { land: { ...COST_DEFAULTS.land }, air: { ...COST_DEFAULTS.air, usd_per_kg: 6, customs: 0.1 } };
+  const product = { price: 5, currency: "GEL", qty_in_box: 30, weight_kg: 2, shipping_method: "air" };
+  const air = computeCost(product, settings);
+  assert.ok(air.ok && air.method === "air" && Math.abs(air.transport - 2 / 30 * 6 * 2.65) < 1e-9);
+  assert.ok(Math.abs(air.customs - (5 + air.transport) * 0.1) < 1e-9);
+  const land = computeCost({ ...product, shipping_method: "land" }, settings);
+  assert.ok(land.ok && land.method === "land" && Math.abs(land.transport - 2 / 30 * 1.1 * 2.65) < 1e-9);
+  assert.equal(computeCost({ ...product, shipping_method: undefined }, settings).method, "land");
+});

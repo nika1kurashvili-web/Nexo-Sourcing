@@ -27,6 +27,10 @@ export function ProductFieldInputs({ values = {}, staff = false }: { values?: Re
       </div>
       <div className="form-grid four">
         {number("qty_in_box", "Quantity in box (pcs)", "1")}
+        {staff && <label>Shipping method (cost formula)<select name="shipping_method" defaultValue={v("shipping_method") === "air" ? "air" : "land"}>
+          <option value="land">Land (სახმელეთო)</option>
+          <option value="air">Air (საჰაერო)</option>
+        </select></label>}
       </div>
       {staff && <label>Internal Note (only visible to Nexo)<textarea name="internal_note" maxLength={5000} defaultValue={v("internal_note")} /></label>}
     </>
