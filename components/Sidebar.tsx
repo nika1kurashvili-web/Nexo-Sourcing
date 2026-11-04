@@ -6,8 +6,6 @@ export function Sidebar({ email }: { email: string }) {
     <aside className="sidebar">
       <div className="brand">Nexo Sourcing<small>Simple sourcing CRM</small></div>
       <nav className="nav">
-        <Link href="/dashboard">Dashboard</Link>
-        <Link href="/requests">Requests</Link>
         <Link href="/companies">Companies</Link>
         <Link href="/suppliers">Suppliers</Link>
         <Link href="/products">Products</Link>
