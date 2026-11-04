@@ -32,6 +32,10 @@ export async function saveProductAction(input: { id?: string; supplierId?: strin
       if (!UUID_PATTERN.test(input.id)) return { error: "Invalid product." };
       const { data, error } = await db.from("sourcing_products")
         .update({ ...values, updated_at: new Date().toISOString() }).eq("id", input.id).select("id").maybeSingle();
+      if (error) {
+        console.error("Product save failed", error);
+        if (/shipping_method/.test(error.message ?? "")) return { error: "The database is missing the shipping method column. Run supabase/migrations/20261014_shipping_method.sql in the Supabase SQL Editor, then try again." };
+      }
       if (error || !data) return { error: "Unable to save the product." };
       revalidatePath("/products");
       return { id: data.id as string };
