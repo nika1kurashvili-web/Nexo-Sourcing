@@ -7,7 +7,7 @@ import {
   addOrderItemsAction, addPaymentAction, approveProposalAction, approveProposalById, deleteOrderAction, deletePaymentAction,
   rejectProposalById, removeOrderItemById, saveOrderItemsAction, setOrderStatusAction, updateOrderNoteAction
 } from "@/app/order-actions";
-import { STATUS_LABELS, lineTotal, money, orderTotals, type OrderStatus } from "@/lib/orders";
+import { STATUS_LABELS, balanceTone, lineTotal, money, orderTotals, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LineSearch } from "@/components/LineSearch";
 import { BUCKET } from "@/lib/supplier-portal";
@@ -154,8 +154,17 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         <div className="stat"><div className="muted small">Total</div><div className="stat-value" style={{ fontSize: 22 }}>{money(totals.total, order.currency)}</div>
           {totals.unpriced > 0 && <div className="small muted">{totals.unpriced} product(s) without an approved price</div>}</div>
         <div className="stat"><div className="muted small">Paid</div><div className="stat-value" style={{ fontSize: 22 }}>{money(totals.paid, order.currency)}</div></div>
-        <div className="stat"><div className="muted small">{totals.balance < 0 ? "Overpaid" : "Remaining"}</div>
-          <div className="stat-value" style={{ fontSize: 22 }}>{money(Math.abs(totals.balance), order.currency)}</div></div>
+        {(() => {
+          const tone = balanceTone(totals);
+          return (
+            <div className={`stat balance-card ${tone}`}>
+              <div className="small balance-label">{tone === "paid" ? "✓ Fully paid" : tone === "over" ? "▲ Overpaid" : "Remaining to pay"}</div>
+              <div className="stat-value" style={{ fontSize: 22 }}>{money(Math.abs(totals.balance), order.currency)}</div>
+              {tone === "due" && totals.paid > 0 && <div className="small balance-note">Paid so far: {money(totals.paid, order.currency)}</div>}
+              {tone === "over" && <div className="small balance-note">More than the order total was paid</div>}
+            </div>
+          );
+        })()}
         {totals.proposals > 0 && <div className="stat"><div className="muted small">Total if all suggestions approved</div>
           <div className="stat-value" style={{ fontSize: 22 }}>{money(totals.proposedTotal, order.currency)}</div></div>}
       </div>

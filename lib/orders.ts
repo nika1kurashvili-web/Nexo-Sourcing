@@ -64,3 +64,12 @@ export function validDate(text: string) {
   const date = new Date(`${text}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
 }
+
+// How an order's payment stands, for colouring: paid = balance exactly 0 (green), due = still to pay (yellow),
+// over = paid more than the total (red), none = nothing priced or paid yet.
+export type BalanceTone = "paid" | "due" | "over" | "none";
+export function balanceTone(totals: { total: number; paid: number; balance: number }): BalanceTone {
+  if (totals.balance < 0) return "over";
+  if (totals.balance > 0) return "due";
+  return totals.total > 0 || totals.paid > 0 ? "paid" : "none";
+}

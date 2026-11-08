@@ -112,3 +112,13 @@ test("air products use the air numbers", () => {
   assert.ok(land.ok && land.method === "land" && Math.abs(land.transport - 2 / 30 * 1.1 * 2.65) < 1e-9);
   assert.equal(computeCost({ ...product, shipping_method: undefined }, settings).method, "land");
 });
+
+import { balanceTone } from "../lib/orders.ts";
+
+test("balance tone: green when settled, yellow while owing, red when overpaid", () => {
+  assert.equal(balanceTone({ total: 100, paid: 100, balance: 0 }), "paid");
+  assert.equal(balanceTone({ total: 100, paid: 40, balance: 60 }), "due");
+  assert.equal(balanceTone({ total: 100, paid: 0, balance: 100 }), "due");
+  assert.equal(balanceTone({ total: 100, paid: 120, balance: -20 }), "over");
+  assert.equal(balanceTone({ total: 0, paid: 0, balance: 0 }), "none");
+});

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { createOrderAction } from "@/app/order-actions";
-import { ORDER_CURRENCIES, STATUS_LABELS, money, orderTotals, type OrderStatus } from "@/lib/orders";
+import { ORDER_CURRENCIES, STATUS_LABELS, balanceTone, money, orderTotals, type OrderStatus } from "@/lib/orders";
 import { OrderExcelUpload } from "@/components/OrderExcelUpload";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 
@@ -99,7 +99,12 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <td>{totals.totalQuantity.toLocaleString("en-GB")}</td>
                 <td>{money(totals.total, order.currency)}{totals.unpriced > 0 && <div className="small muted">{totals.unpriced} without price</div>}</td>
                 <td>{money(totals.paid, order.currency)}</td>
-                <td><strong>{money(totals.balance, order.currency)}</strong></td>
+                <td>{(() => {
+                  const tone = balanceTone(totals);
+                  return <span className={`balance-pill ${tone}`}>
+                    {tone === "paid" ? "✓ Paid in full" : tone === "over" ? `▲ ${money(Math.abs(totals.balance), order.currency)} over` : money(totals.balance, order.currency)}
+                  </span>;
+                })()}</td>
                 <td>{new Date(order.created_at).toLocaleDateString("en-GB", { timeZone: "Asia/Tbilisi" })}</td>
               </tr>
             );
