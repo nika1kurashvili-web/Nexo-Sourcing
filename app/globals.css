@@ -158,3 +158,11 @@ a:hover > .order-thumb{border-color:#7a8796}
 .balance-card.due .balance-label,.balance-card.due .stat-value,.balance-card.due .balance-note{color:#8a5a00}
 .balance-card.over{background:linear-gradient(180deg,#fff3f2,#fde6e4);border-color:#ee9f98}
 .balance-card.over .balance-label,.balance-card.over .stat-value,.balance-card.over .balance-note{color:#b42318}
+
+/* Order completion date */
+.completion-form{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.completion-form label{display:grid;gap:4px;font-weight:700;font-size:13px}
+.completion-form input[type=date]{max-width:190px}
+.date-pill{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:999px;font-size:12.5px;font-weight:800;white-space:nowrap;border:1px solid #cdd8e3;background:#eef3f8;color:#2f4a63}
+.date-pill.soon{background:#fff4d6;border-color:#f0d78a;color:#8a5a00}
+.date-pill.late{background:#fdeceb;border-color:#f2b8b3;color:#b42318}

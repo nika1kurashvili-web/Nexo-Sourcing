@@ -61,7 +61,7 @@ export async function readSupplierOrders(token: string) {
   const { db, link } = await catalogScope(token);
   const [supplier, orders] = await Promise.all([
     db.from("sourcing_suppliers").select("name").eq("id", link.supplier_id).single(),
-    db.from("sourcing_orders").select("id,order_no,currency,status,sent_at,confirmed_at")
+    db.from("sourcing_orders").select("id,order_no,currency,status,sent_at,confirmed_at,completion_date")
       .eq("supplier_id", link.supplier_id).in("status", ["sent", "confirmed"]).order("created_at", { ascending: false }).limit(100)
   ]);
   if (supplier.error || orders.error) throw new Error(INVALID_LINK);
@@ -96,7 +96,7 @@ export async function readSupplierOrders(token: string) {
         photoId: (item.product_id ? photoOf.get(item.product_id) : undefined) ?? null
       }))
     })) as {
-      id: string; order_no: string; currency: string; status: "sent" | "confirmed";
+      id: string; order_no: string; currency: string; status: "sent" | "confirmed"; completion_date: string | null;
       items: { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; proposedQty: number | null; prepared: boolean; photoId: string | null }[];
     }[]
   };

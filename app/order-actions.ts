@@ -209,6 +209,20 @@ export async function updateOrderNoteAction(formData: FormData) {
   back(orderId);
 }
 
+// Nexo only: when the order should be finished / delivered. Empty clears it. Suppliers have no way to change it.
+export async function setCompletionDateAction(formData: FormData) {
+  await requireSourcingAccess();
+  const orderId = text(formData, "order_id");
+  const db = adminDb();
+  await loadOrder(db, orderId);
+  const date = text(formData, "completion_date");
+  if (date && !validDate(date)) back(orderId, "Enter a valid completion date.");
+  const { error } = await db.from("sourcing_orders").update({ completion_date: date || null, updated_at: new Date().toISOString() }).eq("id", orderId);
+  if (error) back(orderId, "Unable to save the completion date. Run the latest SQL migration (20261015_order_completion_date.sql) first.");
+  revalidatePath("/orders");
+  back(orderId);
+}
+
 export async function deleteOrderAction(formData: FormData) {
   await requireSourcingAccess();
   const orderId = text(formData, "order_id");

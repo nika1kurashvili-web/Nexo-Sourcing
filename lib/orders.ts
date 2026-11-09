@@ -73,3 +73,23 @@ export function balanceTone(totals: { total: number; paid: number; balance: numb
   if (totals.balance > 0) return "due";
   return totals.total > 0 || totals.paid > 0 ? "paid" : "none";
 }
+
+// Completion date helpers. Dates are plain YYYY-MM-DD strings (Tbilisi calendar days).
+export function formatDate(date: string | null | undefined) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return "—";
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" });
+}
+
+export function todayInTbilisi() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
+}
+
+export type CompletionTone = "ok" | "soon" | "late";
+// How far the completion date is: "in 5 days", "today", "3 days overdue".
+export function completionInfo(date: string | null | undefined, today: string): { text: string; tone: CompletionTone } | null {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const days = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
+  if (days < 0) return { text: `${-days} day${days === -1 ? "" : "s"} overdue`, tone: "late" };
+  if (days === 0) return { text: "today", tone: "soon" };
+  return { text: `in ${days} day${days === 1 ? "" : "s"}`, tone: days <= 3 ? "soon" : "ok" };
+}

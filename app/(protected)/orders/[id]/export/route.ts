@@ -1,7 +1,7 @@
 import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
-import { STATUS_LABELS, lineTotal, orderTotals, type OrderStatus } from "@/lib/orders";
+import { STATUS_LABELS, formatDate, lineTotal, orderTotals, type OrderStatus } from "@/lib/orders";
 import { writeXlsx, type Cell } from "@/lib/xlsx-lite";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +29,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     ["Supplier", order.sourcing_suppliers?.name ?? ""],
     ["Currency", order.currency],
     ["Status", STATUS_LABELS[order.status as OrderStatus] ?? order.status],
+    ["Completion date", order.completion_date ? formatDate(order.completion_date) : ""],
     [],
     ["Code", "Product", "Quantity", `Price (${order.currency})`, `Line total (${order.currency})`, "Supplier price suggestion", "Supplier quantity suggestion", "Prepared"],
     ...items.map((item): Cell[] => [

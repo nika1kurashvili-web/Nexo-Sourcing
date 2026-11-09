@@ -7,6 +7,7 @@ import { LineSearch } from "@/components/LineSearch";
 type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; proposedQty: number | null; prepared: boolean; photoId: string | null };
 type Order = { id: string; order_no: string; currency: string; status: "sent" | "confirmed"; items: Item[] };
 
+const fmtDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" });
 const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 function Line({ token, order, item }: { token: string; order: Order; item: Item }) {
@@ -124,7 +125,7 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
         return (
           <details className="card order-fold" key={order.id}>
             <summary className="order-fold-head">
-              <span className="order-fold-title"><strong>{order.order_no}</strong><span className="muted small">{order.currency} · {order.items.length} product{order.items.length === 1 ? "" : "s"} · {totalQty.toLocaleString("en-GB")} pcs · Prepared {prepared}/{order.items.length}</span></span>
+              <span className="order-fold-title"><strong>{order.order_no}</strong><span className="muted small">{order.currency} · {order.items.length} product{order.items.length === 1 ? "" : "s"} · {totalQty.toLocaleString("en-GB")} pcs · Prepared {prepared}/{order.items.length}{order.completion_date ? ` · 📅 ${fmtDate(order.completion_date)}` : ""}</span></span>
               <span className="order-fold-end">
                 <strong>{order.currency} {fmt(Math.round(total * 100) / 100)}</strong>
                 {waiting > 0 && <span className="badge warning">{waiting} waiting</span>}
@@ -133,6 +134,7 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
               </span>
             </summary>
             <div style={{ marginTop: 14 }}>
+              {order.completion_date && <div className="small" style={{ marginBottom: 12 }}>📅 Completion date: <strong>{fmtDate(order.completion_date)}</strong></div>}
             <div className="grid-4" style={{ marginBottom: 14 }}>
               <div className="stat"><div className="muted small">Total (approved prices)</div><div className="stat-value" style={{ fontSize: 20 }}>{order.currency} {fmt(Math.round(total * 100) / 100)}</div>
                 {unpriced > 0 && <div className="small muted">{unpriced} without an approved price</div>}</div>

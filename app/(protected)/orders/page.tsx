@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { createOrderAction } from "@/app/order-actions";
-import { ORDER_CURRENCIES, STATUS_LABELS, balanceTone, money, orderTotals, type OrderStatus } from "@/lib/orders";
+import { ORDER_CURRENCIES, STATUS_LABELS, balanceTone, completionInfo, formatDate, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
 import { OrderExcelUpload } from "@/components/OrderExcelUpload";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 
@@ -21,7 +21,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const statusFilter = ["draft", "sent", "confirmed", "cancelled"].includes(params.status ?? "") ? params.status! : "";
 
   let orderQuery = db.from("sourcing_orders")
-    .select("id,order_no,supplier_id,currency,status,created_at,updated_at,sourcing_suppliers(name)")
+    .select("id,order_no,supplier_id,currency,status,created_at,updated_at,completion_date,sourcing_suppliers(name)")
     .order("created_at", { ascending: false }).limit(200);
   if (supplierFilter) orderQuery = orderQuery.eq("supplier_id", supplierFilter);
   if (statusFilter) orderQuery = orderQuery.eq("status", statusFilter);
@@ -86,7 +86,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
 
       {orders.length === 0 ? <div className="card empty">No orders yet.</div> : (
         <div className="card"><div className="table-wrap"><table>
-          <thead><tr><th>Order</th><th>Supplier</th><th>Status</th><th>Qty</th><th>Total</th><th>Paid</th><th>Balance</th><th>Created</th></tr></thead>
+          <thead><tr><th>Order</th><th>Supplier</th><th>Status</th><th>Qty</th><th>Total</th><th>Paid</th><th>Balance</th><th>Completion</th><th>Created</th></tr></thead>
           <tbody>{orders.map(order => {
             const totals = orderTotals(items.filter(item => item.order_id === order.id), payments.filter(p => p.order_id === order.id).map(p => p.amount));
             return (
@@ -104,6 +104,12 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   return <span className={`balance-pill ${tone}`}>
                     {tone === "paid" ? "✓ Paid in full" : tone === "over" ? `▲ ${money(Math.abs(totals.balance), order.currency)} over` : money(totals.balance, order.currency)}
                   </span>;
+                })()}</td>
+                <td>{(() => {
+                  const info = order.status === "cancelled" ? null : completionInfo(order.completion_date, todayInTbilisi());
+                  return order.completion_date
+                    ? <span className={`date-pill ${info?.tone ?? "ok"}`}>{formatDate(order.completion_date)}{info ? ` · ${info.text}` : ""}</span>
+                    : <span className="muted">—</span>;
                 })()}</td>
                 <td>{new Date(order.created_at).toLocaleDateString("en-GB", { timeZone: "Asia/Tbilisi" })}</td>
               </tr>

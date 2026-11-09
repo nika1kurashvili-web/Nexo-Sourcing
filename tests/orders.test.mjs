@@ -122,3 +122,16 @@ test("balance tone: green when settled, yellow while owing, red when overpaid", 
   assert.equal(balanceTone({ total: 100, paid: 120, balance: -20 }), "over");
   assert.equal(balanceTone({ total: 0, paid: 0, balance: 0 }), "none");
 });
+
+import { completionInfo, formatDate } from "../lib/orders.ts";
+
+test("completion date: days left, today, overdue", () => {
+  assert.equal(completionInfo(null, "2026-11-09"), null);
+  assert.deepEqual(completionInfo("2026-11-20", "2026-11-09"), { text: "in 11 days", tone: "ok" });
+  assert.deepEqual(completionInfo("2026-11-11", "2026-11-09"), { text: "in 2 days", tone: "soon" });
+  assert.deepEqual(completionInfo("2026-11-09", "2026-11-09"), { text: "today", tone: "soon" });
+  assert.deepEqual(completionInfo("2026-11-08", "2026-11-09"), { text: "1 day overdue", tone: "late" });
+  assert.deepEqual(completionInfo("2026-11-01", "2026-11-09"), { text: "8 days overdue", tone: "late" });
+  assert.equal(formatDate("2026-11-09"), "09 Nov 2026");
+  assert.equal(formatDate(null), "—");
+});

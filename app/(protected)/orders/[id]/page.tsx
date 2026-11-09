@@ -5,9 +5,9 @@ import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import {
   addOrderItemsAction, addPaymentAction, approveProposalAction, approveProposalById, deleteOrderAction, deletePaymentAction,
-  rejectProposalById, removeOrderItemById, saveOrderItemsAction, setOrderStatusAction, updateOrderNoteAction
+  rejectProposalById, removeOrderItemById, saveOrderItemsAction, setCompletionDateAction, setOrderStatusAction, updateOrderNoteAction
 } from "@/app/order-actions";
-import { STATUS_LABELS, balanceTone, lineTotal, money, orderTotals, type OrderStatus } from "@/lib/orders";
+import { STATUS_LABELS, balanceTone, completionInfo, formatDate, lineTotal, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LineSearch } from "@/components/LineSearch";
 import { BUCKET } from "@/lib/supplier-portal";
@@ -100,6 +100,23 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         </div>
         {status === "sent" && <p className="small muted" style={{ marginBottom: 0 }}>The supplier sees this order in their catalog link under "Orders" and can suggest prices. Suggestions only count after you approve them.</p>}
       </div>
+
+      {(() => {
+        const info = order.status === "cancelled" ? null : completionInfo(order.completion_date, todayInTbilisi());
+        return (
+          <div className="card completion-card" style={{ marginBottom: 14 }}>
+            <form action={setCompletionDateAction} className="completion-form">
+              <input type="hidden" name="order_id" value={id} />
+              <label>Completion date
+                <input type="date" name="completion_date" defaultValue={order.completion_date ?? ""} />
+              </label>
+              <button className="btn secondary" type="submit">Save date</button>
+              {order.completion_date && <span className={`date-pill ${info?.tone ?? "ok"}`}>📅 {formatDate(order.completion_date)}{info ? ` · ${info.text}` : ""}</span>}
+              {!order.completion_date && <span className="small muted">When will this order be finished? The supplier sees the date but cannot change it.</span>}
+            </form>
+          </div>
+        );
+      })()}
 
       <div className="card" style={{ marginBottom: 14 }}>
         <h2 style={{ marginTop: 0 }}>Products <span className="muted small" style={{ fontWeight: 500 }}>· {items.length}</span></h2>
