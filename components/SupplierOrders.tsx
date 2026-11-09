@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { LineSearch } from "@/components/LineSearch";
 
 type Item = { id: string; sku: string | null; name: string; quantity: number; price: number | null; proposed: number | null; proposedQty: number | null; prepared: boolean; photoId: string | null };
-type Order = { id: string; order_no: string; currency: string; status: "sent" | "confirmed"; items: Item[] };
+type Order = { id: string; order_no: string; currency: string; status: "sent" | "confirmed"; completion_date?: string | null; items: Item[] };
 
 const fmtDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { timeZone: "UTC", day: "2-digit", month: "short", year: "numeric" });
 const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
