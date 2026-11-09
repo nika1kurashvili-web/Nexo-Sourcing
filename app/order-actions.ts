@@ -200,6 +200,21 @@ export async function setOrderStatusAction(formData: FormData) {
   back(orderId);
 }
 
+// The order name (shown to the supplier too). Must be unique; ORD-0007 style names are only the default.
+export async function updateOrderNameAction(formData: FormData) {
+  await requireSourcingAccess();
+  const orderId = text(formData, "order_id");
+  const db = adminDb();
+  await loadOrder(db, orderId);
+  const name = text(formData, "order_no").replace(/\s+/g, " ");
+  if (!name) back(orderId, "The order name cannot be empty.");
+  if (name.length > 60) back(orderId, "The order name must be 60 characters or fewer.");
+  const { error } = await db.from("sourcing_orders").update({ order_no: name, updated_at: new Date().toISOString() }).eq("id", orderId);
+  if (error) back(orderId, error.code === "23505" ? "Another order already has this name." : "Unable to rename the order.");
+  revalidatePath("/orders");
+  back(orderId);
+}
+
 export async function updateOrderNoteAction(formData: FormData) {
   await requireSourcingAccess();
   const orderId = text(formData, "order_id");

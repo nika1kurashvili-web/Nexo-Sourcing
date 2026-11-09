@@ -5,7 +5,7 @@ import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import {
   addOrderItemsAction, addPaymentAction, approveProposalAction, approveProposalById, deleteOrderAction, deletePaymentAction,
-  rejectProposalById, removeOrderItemById, saveOrderItemsAction, setCompletionDateAction, setOrderStatusAction, updateOrderNoteAction
+  rejectProposalById, removeOrderItemById, saveOrderItemsAction, setCompletionDateAction, setOrderStatusAction, updateOrderNameAction, updateOrderNoteAction
 } from "@/app/order-actions";
 import { STATUS_LABELS, balanceTone, completionInfo, formatDate, lineTotal, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -75,6 +75,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       <div className="page-head">
         <div>
           <h1>{order.order_no}</h1>
+          <details className="rename-order">
+            <summary>✎ Rename order</summary>
+            <form action={updateOrderNameAction} className="rename-form">
+              <input type="hidden" name="order_id" value={id} />
+              <input name="order_no" defaultValue={order.order_no} maxLength={60} required aria-label="Order name" />
+              <button className="btn secondary sm" type="submit">Save name</button>
+            </form>
+          </details>
           <div className="muted">{order.sourcing_suppliers?.name ?? "Supplier"} · {order.currency} · <Link href="/orders">All orders</Link></div>
         </div>
         <div className="badges">
