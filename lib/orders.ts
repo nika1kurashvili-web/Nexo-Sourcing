@@ -95,3 +95,14 @@ export function completionInfo(date: string | null | undefined, today: string, a
   if (days === 0) return { text: "today", tone: "soon" };
   return { text: `in ${days} day${days === 1 ? "" : "s"}`, tone: days <= 3 ? "soon" : "ok" };
 }
+
+export type SeenTone = "unseen" | "changed" | "seen";
+// What Nexo sees about a supplier's view of an order. Only orders the supplier can see (sent / confirmed) have a mark.
+export function seenState(order: { status: string; supplier_seen_at?: string | null; staff_changed_at?: string | null }): { tone: SeenTone; text: string } | null {
+  if (order.status !== "sent" && order.status !== "confirmed") return null;
+  const seen = order.supplier_seen_at ? Date.parse(order.supplier_seen_at) : NaN;
+  if (!Number.isFinite(seen)) return { tone: "unseen", text: "Not opened yet" };
+  const changed = order.staff_changed_at ? Date.parse(order.staff_changed_at) : NaN;
+  if (Number.isFinite(changed) && changed > seen) return { tone: "changed", text: "Changes not seen yet" };
+  return { tone: "seen", text: "Seen by supplier" };
+}

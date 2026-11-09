@@ -123,7 +123,7 @@ test("balance tone: green when settled, yellow while owing, red when overpaid", 
   assert.equal(balanceTone({ total: 0, paid: 0, balance: 0 }), "none");
 });
 
-import { completionInfo, formatDate } from "../lib/orders.ts";
+import { completionInfo, formatDate, seenState } from "../lib/orders.ts";
 
 test("completion date: days left, today, overdue", () => {
   assert.equal(completionInfo(null, "2026-11-09"), null);
@@ -135,4 +135,13 @@ test("completion date: days left, today, overdue", () => {
   assert.deepEqual(completionInfo("2026-11-01", "2026-11-09", true), { text: "all ready", tone: "done" });
   assert.equal(formatDate("2026-11-09"), "09 Nov 2026");
   assert.equal(formatDate(null), "—");
+});
+
+test("seen state for the supplier's view of an order", () => {
+  assert.equal(seenState({ status: "draft" }), null);
+  assert.equal(seenState({ status: "cancelled", supplier_seen_at: "2026-11-09T10:00:00Z" }), null);
+  assert.deepEqual(seenState({ status: "sent", supplier_seen_at: null, staff_changed_at: "2026-11-09T10:00:00Z" }), { tone: "unseen", text: "Not opened yet" });
+  assert.deepEqual(seenState({ status: "sent", supplier_seen_at: "2026-11-09T11:00:00Z", staff_changed_at: "2026-11-09T10:00:00Z" }), { tone: "seen", text: "Seen by supplier" });
+  assert.deepEqual(seenState({ status: "confirmed", supplier_seen_at: "2026-11-09T11:00:00Z", staff_changed_at: "2026-11-09T12:00:00Z" }), { tone: "changed", text: "Changes not seen yet" });
+  assert.deepEqual(seenState({ status: "sent", supplier_seen_at: "2026-11-09T11:00:00Z" }), { tone: "seen", text: "Seen by supplier" });
 });

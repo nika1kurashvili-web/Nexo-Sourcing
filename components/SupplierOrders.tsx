@@ -111,6 +111,16 @@ function Line({ token, order, item }: { token: string; order: Order; item: Item 
   );
 }
 
+// Tells Nexo this order was opened (once per page visit per order).
+const alreadyMarked = new Set<string>();
+function markSeen(token: string, orderId: string) {
+  if (alreadyMarked.has(orderId)) return;
+  alreadyMarked.add(orderId);
+  fetch(`/api/supplier-catalog/${token}/orders`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ operation: "mark_seen", orderId })
+  }).catch(() => alreadyMarked.delete(orderId));
+}
+
 export function SupplierOrders({ token, supplierName, orders }: { token: string; supplierName: string; orders: Order[] }) {
   return (
     <div className="stack">
@@ -123,7 +133,7 @@ export function SupplierOrders({ token, supplierName, orders }: { token: string;
         const waiting = order.items.filter(item => item.proposed !== null).length;
         const unpriced = order.items.filter(item => item.price === null).length;
         return (
-          <details className="card order-fold" key={order.id}>
+          <details className="card order-fold" key={order.id} onToggle={event => { if ((event.currentTarget as HTMLDetailsElement).open) markSeen(token, order.id); }}>
             <summary className="order-fold-head">
               <span className="order-fold-title"><strong>{order.order_no}</strong><span className="muted small">{order.currency} · {order.items.length} product{order.items.length === 1 ? "" : "s"} · {totalQty.toLocaleString("en-GB")} pcs · Prepared {prepared}/{order.items.length}{order.completion_date ? ` · 📅 ${fmtDate(order.completion_date)}` : ""}</span></span>
               <span className="order-fold-end">

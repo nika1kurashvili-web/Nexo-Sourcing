@@ -14,6 +14,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   let body: Record<string, unknown>;
   try { body = await supplierBody(request, 2000); }
   catch { return supplierJson({ error: "Invalid request." }, 400); }
+  // The supplier opened an order: record the time so Nexo can see it was looked at.
+  if (body.operation === "mark_seen") {
+    if (Object.keys(body).some(key => !["operation", "orderId"].includes(key)) || typeof body.orderId !== "string" || !UUID_PATTERN.test(body.orderId)) return supplierDenied();
+    try {
+      const { error } = await scope.db.from("sourcing_orders").update({ supplier_seen_at: new Date().toISOString() })
+        .eq("id", body.orderId).eq("supplier_id", scope.link.supplier_id).in("status", ["sent", "confirmed"]);
+      if (error) return supplierJson({ error: "Unable to save." }, 400);
+      revalidatePath("/orders");
+      return supplierJson({ ok: true });
+    } catch {
+      return supplierJson({ error: "Unable to save." }, 400);
+    }
+  }
   if (Object.keys(body).some(key => !["operation", "itemId", "price", "quantity", "ready"].includes(key))
     || !["set_price", "set_quantity", "set_ready"].includes(String(body.operation)) || typeof body.itemId !== "string" || !UUID_PATTERN.test(body.itemId)) {
     return supplierDenied();

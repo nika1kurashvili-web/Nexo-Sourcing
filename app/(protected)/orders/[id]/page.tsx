@@ -7,7 +7,7 @@ import {
   addOrderItemsAction, addPaymentAction, approveProposalAction, approveProposalById, deleteOrderAction, deletePaymentAction,
   rejectProposalById, removeOrderItemById, setAllReadyById, setItemReadyById, saveOrderItemsAction, setCompletionDateAction, setOrderStatusAction, updateOrderNameAction, updateOrderNoteAction
 } from "@/app/order-actions";
-import { STATUS_LABELS, balanceTone, completionInfo, formatDate, lineTotal, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
+import { STATUS_LABELS, balanceTone, completionInfo, seenState, formatDate, lineTotal, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LineSearch } from "@/components/LineSearch";
 import { BUCKET } from "@/lib/supplier-portal";
@@ -100,6 +100,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
         <div className="badges">
           <a className="btn secondary" href={`/orders/${id}/export`}>⬇ Download Excel</a>
           <span className={`badge ${BADGE[status] ?? ""}`}>{STATUS_LABELS[status]}</span>
+          {(() => { const seen = seenState(order); return seen ? <span className={`seen-pill ${seen.tone}`} title={order.supplier_seen_at ? `Last opened ${new Date(order.supplier_seen_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}` : "The supplier has not opened this order"}>{seen.tone === "seen" ? "👁 Seen by supplier" : seen.tone === "changed" ? "● Changes not seen yet" : "● Not opened yet"}</span> : null; })()}
           {items.length > 0 && <span className={`badge ${preparedCount === items.length ? "success" : ""}`}>Prepared {preparedCount} of {items.length}</span>}
         </div>
       </div>

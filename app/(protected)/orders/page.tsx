@@ -2,7 +2,7 @@ import Link from "next/link";
 import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { createOrderAction } from "@/app/order-actions";
-import { ORDER_CURRENCIES, STATUS_LABELS, balanceTone, completionInfo, formatDate, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
+import { ORDER_CURRENCIES, STATUS_LABELS, balanceTone, completionInfo, seenState, formatDate, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
 import { OrderExcelUpload } from "@/components/OrderExcelUpload";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 
@@ -21,7 +21,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const statusFilter = ["draft", "sent", "confirmed", "cancelled"].includes(params.status ?? "") ? params.status! : "";
 
   let orderQuery = db.from("sourcing_orders")
-    .select("id,order_no,supplier_id,currency,status,created_at,updated_at,completion_date,sourcing_suppliers(name)")
+    .select("id,order_no,supplier_id,currency,status,created_at,updated_at,completion_date,supplier_seen_at,staff_changed_at,sourcing_suppliers(name)")
     .order("created_at", { ascending: false }).limit(200);
   if (supplierFilter) orderQuery = orderQuery.eq("supplier_id", supplierFilter);
   if (statusFilter) orderQuery = orderQuery.eq("status", statusFilter);
@@ -95,6 +95,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 <td>{order.sourcing_suppliers?.name ?? "—"}</td>
                 <td><span className={`badge ${BADGE[order.status] ?? ""}`}>{STATUS_LABELS[order.status as OrderStatus] ?? order.status}</span>
                   {(order.status === "sent" || order.status === "confirmed") && (() => { const own = items.filter(item => item.order_id === order.id); const ready = own.filter(item => item.prepared_at).length; return own.length ? <span className={`badge ${ready === own.length ? "success" : ""}`} style={{ marginLeft: 6 }}>Prepared {ready}/{own.length}</span> : null; })()}
+                  {(() => { const seen = seenState(order); return seen ? <span className={`seen-pill ${seen.tone}`} style={{ marginLeft: 6 }} title={order.supplier_seen_at ? `Last opened ${new Date(order.supplier_seen_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}` : "The supplier has not opened this order"}>{seen.tone === "seen" ? "👁 Seen" : seen.tone === "changed" ? "● Changes not seen" : "● Not opened"}</span> : null; })()}
                   {totals.proposals > 0 && <span className="badge warning" style={{ marginLeft: 6 }}>{totals.proposals} price suggestion{totals.proposals === 1 ? "" : "s"}</span>}</td>
                 <td>{totals.totalQuantity.toLocaleString("en-GB")}</td>
                 <td>{money(totals.total, order.currency)}{totals.unpriced > 0 && <div className="small muted">{totals.unpriced} without price</div>}</td>
