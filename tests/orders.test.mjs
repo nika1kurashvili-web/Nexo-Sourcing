@@ -132,6 +132,7 @@ test("completion date: days left, today, overdue", () => {
   assert.deepEqual(completionInfo("2026-11-09", "2026-11-09"), { text: "today", tone: "soon" });
   assert.deepEqual(completionInfo("2026-11-08", "2026-11-09"), { text: "1 day overdue", tone: "late" });
   assert.deepEqual(completionInfo("2026-11-01", "2026-11-09"), { text: "8 days overdue", tone: "late" });
+  assert.deepEqual(completionInfo("2026-11-01", "2026-11-09", true), { text: "all ready", tone: "done" });
   assert.equal(formatDate("2026-11-09"), "09 Nov 2026");
   assert.equal(formatDate(null), "—");
 });

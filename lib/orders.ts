@@ -84,10 +84,12 @@ export function todayInTbilisi() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
 }
 
-export type CompletionTone = "ok" | "soon" | "late";
+export type CompletionTone = "ok" | "soon" | "late" | "done";
 // How far the completion date is: "in 5 days", "today", "3 days overdue".
-export function completionInfo(date: string | null | undefined, today: string): { text: string; tone: CompletionTone } | null {
+// allReady: every product in the order is marked prepared. Then the order is simply done, so no "overdue" warning.
+export function completionInfo(date: string | null | undefined, today: string, allReady = false): { text: string; tone: CompletionTone } | null {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  if (allReady) return { text: "all ready", tone: "done" };
   const days = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
   if (days < 0) return { text: `${-days} day${days === -1 ? "" : "s"} overdue`, tone: "late" };
   if (days === 0) return { text: "today", tone: "soon" };

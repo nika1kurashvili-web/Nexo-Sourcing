@@ -106,7 +106,9 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                   </span>;
                 })()}</td>
                 <td>{(() => {
-                  const info = order.status === "cancelled" ? null : completionInfo(order.completion_date, todayInTbilisi());
+                  const own = items.filter(item => item.order_id === order.id);
+                  const allReady = own.length > 0 && own.every(item => item.prepared_at);
+                  const info = order.status === "cancelled" ? null : completionInfo(order.completion_date, todayInTbilisi(), allReady);
                   return order.completion_date
                     ? <span className={`date-pill ${info?.tone ?? "ok"}`}>{formatDate(order.completion_date)}{info ? ` · ${info.text}` : ""}</span>
                     : <span className="muted">—</span>;

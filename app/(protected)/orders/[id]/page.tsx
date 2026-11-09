@@ -122,9 +122,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       </div>
 
       {(() => {
-        const info = order.status === "cancelled" ? null : completionInfo(order.completion_date, todayInTbilisi());
+        const allReady = items.length > 0 && preparedCount === items.length;
+        const info = order.status === "cancelled" ? null : completionInfo(order.completion_date, todayInTbilisi(), allReady);
         return (
-          <div className="card completion-card" style={{ marginBottom: 14 }}>
+          <div className={`card completion-card ${info?.tone === "done" ? "done" : ""}`} style={{ marginBottom: 14 }}>
             <form action={setCompletionDateAction} className="completion-form">
               <input type="hidden" name="order_id" value={id} />
               <label>Completion date
