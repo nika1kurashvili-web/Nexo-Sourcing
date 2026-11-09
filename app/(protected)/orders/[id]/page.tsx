@@ -5,7 +5,7 @@ import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import {
   addOrderItemsAction, addPaymentAction, approveProposalAction, approveProposalById, deleteOrderAction, deletePaymentAction,
-  rejectProposalById, removeOrderItemById, saveOrderItemsAction, setCompletionDateAction, setOrderStatusAction, updateOrderNameAction, updateOrderNoteAction
+  rejectProposalById, removeOrderItemById, setAllReadyById, setItemReadyById, saveOrderItemsAction, setCompletionDateAction, setOrderStatusAction, updateOrderNameAction, updateOrderNoteAction
 } from "@/app/order-actions";
 import { STATUS_LABELS, balanceTone, completionInfo, formatDate, lineTotal, money, orderTotals, todayInTbilisi, type OrderStatus } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -140,6 +140,12 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
 
       <div className="card" style={{ marginBottom: 14 }}>
         <h2 style={{ marginTop: 0 }}>Products <span className="muted small" style={{ fontWeight: 500 }}>· {items.length}</span></h2>
+        {items.length > 0 && status !== "cancelled" && (
+          <form className="product-actions" style={{ marginBottom: 10 }}>
+            <button className="btn secondary sm" type="submit" formAction={setAllReadyById.bind(null, id, true)} disabled={preparedCount === items.length}>Mark all ready</button>
+            <button className="btn secondary sm" type="submit" formAction={setAllReadyById.bind(null, id, false)} disabled={preparedCount === 0}>Clear all marks</button>
+          </form>
+        )}
         {items.length === 0 ? <div className="empty">No products yet. Add some below.</div> : (
           <form action={saveOrderItemsAction}>
             <input type="hidden" name="order_id" value={id} />
@@ -171,7 +177,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
                         </div>}
                       </div>)}</td>
                     <td className="num"><strong>{line === null ? <span className="muted">no price</span> : money(line, order.currency)}</strong></td>
-                    <td>{item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}</td>
+                    <td>
+                      <div className="stack" style={{ gap: 6 }}>
+                        {item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}
+                        {status !== "cancelled" && (item.prepared_at
+                          ? <button className="btn secondary sm" type="submit" formAction={setItemReadyById.bind(null, id, item.id, false)}>Undo</button>
+                          : <button className="btn sm" type="submit" formAction={setItemReadyById.bind(null, id, item.id, true)}>Mark ready</button>)}
+                      </div></td>
                     <td>{editable && <button className="btn danger sm" type="submit" formAction={removeOrderItemById.bind(null, id, item.id)} title="Remove from order">Remove</button>}</td>
                   </tr>
                 );

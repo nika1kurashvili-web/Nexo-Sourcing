@@ -167,6 +167,34 @@ async function removeItem(orderId: string, itemId: string) {
 export async function removeOrderItemAction(formData: FormData) { return removeItem(text(formData, "order_id"), text(formData, "item")); }
 export async function removeOrderItemById(orderId: string, itemId: string) { return removeItem(orderId, itemId); }
 
+// Nexo staff can mark a line as prepared (or undo it), the same flag the supplier sets from their catalog link.
+async function setItemReady(orderId: string, itemId: string, ready: boolean) {
+  await requireSourcingAccess();
+  const db = adminDb();
+  const order = await loadOrder(db, orderId);
+  if (order.status === "cancelled") back(orderId, "This order is cancelled.");
+  if (!UUID_PATTERN.test(itemId)) back(orderId, "Unable to update: the product was not identified. Reload the page and try again.");
+  const { data, error } = await db.from("sourcing_order_items")
+    .update({ prepared_at: ready ? new Date().toISOString() : null })
+    .eq("id", itemId).eq("order_id", orderId).select("id");
+  if (error || !data?.length) back(orderId, "Unable to update the prepared mark.");
+  back(orderId);
+}
+export async function setItemReadyById(orderId: string, itemId: string, ready: boolean) { return setItemReady(orderId, itemId, ready); }
+
+// Marks every line prepared (or clears all marks) in one go.
+async function setAllReady(orderId: string, ready: boolean) {
+  await requireSourcingAccess();
+  const db = adminDb();
+  const order = await loadOrder(db, orderId);
+  if (order.status === "cancelled") back(orderId, "This order is cancelled.");
+  const { error } = await db.from("sourcing_order_items")
+    .update({ prepared_at: ready ? new Date().toISOString() : null }).eq("order_id", orderId);
+  if (error) back(orderId, "Unable to update the prepared marks.");
+  back(orderId);
+}
+export async function setAllReadyById(orderId: string, ready: boolean) { return setAllReady(orderId, ready); }
+
 // draft -> sent -> confirmed, plus cancel / reopen. Confirming needs every line priced and no open suggestions.
 export async function setOrderStatusAction(formData: FormData) {
   await requireSourcingAccess();
