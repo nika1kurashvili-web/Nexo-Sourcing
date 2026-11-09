@@ -76,3 +76,5 @@ Apply supabase/migrations/20260930_sourcing_image_limits.sql in the Supabase SQL
 Uploads are recorded as item_image_uploaded after the image path is successfully saved to an item. Removing or replacing a reference image deletes its Storage object when the item is saved; abandoning an unsaved form can leave an unused upload, which may be cleaned up separately.
 
 Verification with configured Supabase credentials: create an item with decimals, comments, and an image; refresh; edit and refresh again; check item_created, item_updated, and item_image_uploaded in the log. Check a legacy external URL, empty packaging values, upload rejection above 10 MiB/non-image files, and denied Storage access for inactive/non-members.
+
+<!-- deploy trigger 2026-11-09 -->
