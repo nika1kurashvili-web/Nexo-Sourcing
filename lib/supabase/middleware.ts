@@ -21,6 +21,7 @@ export async function updateSession(request: NextRequest) {
       }
     }
   });
-  await supabase.auth.getUser();
+  // getClaims checks the token signature locally (no extra round trip to Supabase Auth) and still refreshes an expired session.
+  await supabase.auth.getClaims();
   return response;
 }

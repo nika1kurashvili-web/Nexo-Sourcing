@@ -7,8 +7,11 @@ import { createClient } from "@/lib/supabase/server";
 // Supabase Auth round trip plus the sourcing_users query.
 export const requireSourcingAccess = cache(async () => {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
+  // getClaims verifies the signed session token locally (fast) instead of calling Supabase Auth on every page.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const claims = claimsData?.claims as { sub?: string; email?: string } | undefined;
+  if (!claims?.sub) redirect("/login");
+  const user = { id: claims.sub as string, email: (claims.email ?? null) as string | null };
 
   const { data: profile } = await supabase
     .from("sourcing_users")

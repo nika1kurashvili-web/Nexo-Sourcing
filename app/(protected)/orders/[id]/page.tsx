@@ -27,6 +27,24 @@ function StatusButton({ orderId, to, label, confirm, secondary }: { orderId: str
   );
 }
 
+// First ready photo of each product as a short-lived signed link (staff only), in two round trips.
+async function photoUrlsFor(db: any, productIds: (string | null)[]) {
+  const urls = new Map<string, string>();
+  const ids = Array.from(new Set(productIds.filter((value): value is string => !!value)));
+  if (!ids.length) return urls;
+  const { data: photos } = await db.from("sourcing_product_images").select("product_id,object_path,created_at")
+    .eq("ready", true).in("product_id", ids).order("created_at");
+  const firstPerProduct = new Map<string, string>();
+  for (const photo of photos ?? []) if (!firstPerProduct.has(photo.product_id)) firstPerProduct.set(photo.product_id, photo.object_path);
+  const paths = Array.from(firstPerProduct.values());
+  if (!paths.length) return urls;
+  const { data: signed } = await db.storage.from(BUCKET).createSignedUrls(paths, 3600);
+  const urlByPath = new Map<string, string>();
+  paths.forEach((path, index) => { if (signed?.[index]?.signedUrl) urlByPath.set(path, signed[index].signedUrl); });
+  firstPerProduct.forEach((path, productId) => { const url = urlByPath.get(path); if (url) urls.set(productId, url); });
+  return urls;
+}
+
 export default async function OrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const { id } = await params;
   const { error } = await searchParams;
@@ -48,25 +66,19 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const totals = orderTotals(items, payments.map(payment => payment.amount));
   const preparedCount = items.filter(item => item.prepared_at).length;
 
-  // Products that can still be added (approved products of this supplier).
-  const productsResult = editable
-    ? await db.from("sourcing_products").select("id,sku,name,price,currency").eq("supplier_id", order.supplier_id).eq("status", "approved").order("name").limit(2000)
-    : { data: [] };
-  // One photo per product (shown small; click opens it). Signed links are short-lived and made for staff only.
-  const wanted = Array.from(new Set([...items.map(item => item.product_id), ...(productsResult.data ?? []).map((product: any) => product.id)].filter(Boolean)));
-  const photoUrl = new Map<string, string>();
-  if (wanted.length) {
-    const { data: photos } = await db.from("sourcing_product_images").select("product_id,object_path,approved,created_at")
-      .eq("ready", true).in("product_id", wanted).order("created_at");
-    const firstPerProduct = new Map<string, string>();
-    for (const photo of photos ?? []) if (!firstPerProduct.has(photo.product_id)) firstPerProduct.set(photo.product_id, photo.object_path);
-    const paths = Array.from(firstPerProduct.values());
-    if (paths.length) {
-      const { data: signed } = await db.storage.from(BUCKET).createSignedUrls(paths, 3600);
-      const urlByPath = new Map<string, string>();
-      paths.forEach((path, index) => { if (signed?.[index]?.signedUrl) urlByPath.set(path, signed[index].signedUrl); });
-      firstPerProduct.forEach((path, productId) => { const url = urlByPath.get(path); if (url) photoUrl.set(productId, url); });
-    }
+  // Run the two dependent lookups at the same time: products that can still be added, and the photos of the lines.
+  const [productsResult, linePhotos] = await Promise.all([
+    editable
+      ? db.from("sourcing_products").select("id,sku,name,price,currency").eq("supplier_id", order.supplier_id).eq("status", "approved").order("name").limit(2000)
+      : Promise.resolve({ data: [] as any[] }),
+    photoUrlsFor(db, items.map(item => item.product_id))
+  ]);
+  const photoUrl = linePhotos;
+  // Photos in the "add products" list are only loaded for small catalogs: signing hundreds of links makes the page slow.
+  const pickable: any[] = productsResult.data ?? [];
+  if (pickable.length > 0 && pickable.length <= 40) {
+    const more = await photoUrlsFor(db, pickable.map(product => product.id).filter(productId => !photoUrl.has(productId)));
+    more.forEach((url, productId) => photoUrl.set(productId, url));
   }
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
 
