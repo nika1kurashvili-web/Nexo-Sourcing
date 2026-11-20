@@ -135,7 +135,22 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
                       <td>{item.prepared_at ? <span className="badge success">✓ Ready</span> : <span className="muted">—</span>}</td>
                     </tr>
                   ))}</tbody>
+                  <tfoot><tr>
+                    <td colSpan={3}><strong>Total</strong></td>
+                    <td><strong>{totals.totalQuantity.toLocaleString("en-GB")}</strong></td>
+                    <td></td>
+                    <td className="num"><strong>{totals.byCurrency.map(item => `${item.currency} ${fmt(item.total)}`).join(" + ") || "—"}</strong></td>
+                    <td className="num"><strong>{profit.counted > 0 ? fmt(profit.profit) : "—"}</strong></td>
+                    <td><strong>{readyCount}/{items.length}</strong></td>
+                  </tr></tfoot>
                 </table></div>
+                {profit.counted > 0 && (
+                  <p className="small" style={{ margin: "8px 0 0" }}>
+                    <strong>Profit (GEL):</strong> revenue {fmt(profit.revenue)} − cost {fmt(profit.cost)} = <strong>{fmt(profit.profit)}</strong>
+                    {profit.revenue > 0 && <span className="muted"> ({fmt(profit.profit / profit.revenue * 100)}% of revenue)</span>}
+                    {profit.skipped > 0 && <span className="muted"> · {profit.skipped} line{profit.skipped === 1 ? "" : "s"} not counted</span>}
+                  </p>
+                )}
                 {order.note && <p className="small"><strong>Company note:</strong> {order.note}</p>}
                 <div className="product-actions" style={{ marginTop: 10 }}>
                   <Link className="btn secondary sm" href={`/company-orders/${order.id}`}>Edit</Link>
