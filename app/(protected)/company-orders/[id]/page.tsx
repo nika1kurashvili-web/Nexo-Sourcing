@@ -5,6 +5,7 @@ import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import { PAYMENT_METHODS, lineTotals, paymentMethodLabel, paymentSummary } from "@/lib/company-orders";
 import { balanceTone } from "@/lib/orders";
+import { BUCKET } from "@/lib/supplier-portal";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LineSearch } from "@/components/LineSearch";
 import {
@@ -17,6 +18,24 @@ const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDi
 const STATUS: Record<string, { label: string; badge: string }> = {
   new: { label: "New", badge: "warning" }, accepted: { label: "Accepted", badge: "success" }, cancelled: { label: "Cancelled", badge: "danger" }
 };
+
+// First ready photo of each product as a short-lived signed link (staff only), in two round trips.
+async function photoUrlsFor(db: any, productIds: (string | null)[]) {
+  const urls = new Map<string, string>();
+  const ids = Array.from(new Set(productIds.filter((value): value is string => !!value)));
+  if (!ids.length) return urls;
+  const { data: photos } = await db.from("sourcing_product_images").select("product_id,object_path,created_at")
+    .eq("ready", true).in("product_id", ids).order("created_at");
+  const firstPerProduct = new Map<string, string>();
+  for (const photo of photos ?? []) if (!firstPerProduct.has(photo.product_id)) firstPerProduct.set(photo.product_id, photo.object_path);
+  const paths = Array.from(firstPerProduct.values());
+  if (!paths.length) return urls;
+  const { data: signed } = await db.storage.from(BUCKET).createSignedUrls(paths, 3600);
+  const urlByPath = new Map<string, string>();
+  paths.forEach((path, index) => { if (signed?.[index]?.signedUrl) urlByPath.set(path, signed[index].signedUrl); });
+  firstPerProduct.forEach((path, productId) => { const url = urlByPath.get(path); if (url) urls.set(productId, url); });
+  return urls;
+}
 
 export default async function EditCompanyOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const { id } = await params;
@@ -36,6 +55,8 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
   const order = orderResult.data;
   if (!order) notFound();
   const items: any[] = [...(order.sourcing_company_order_items ?? [])].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+
+  const photoUrl = await photoUrlsFor(db, items.map(item => item.product_id));
 
   const { data: assigned } = await db.from("sourcing_company_products")
     .select("product_id,sell_price,currency,sourcing_products!inner(id,sku,name,status)")
@@ -92,9 +113,12 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
             {/* Enter inside a field must save, never remove a line: this is the first (default) submit button. */}
             <button type="submit" tabIndex={-1} aria-hidden="true" style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}>Save</button>
             <LineSearch><div className="table-wrap order-table"><table>
-              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Line total</th><th>Ready</th><th></th></tr></thead>
+              <thead><tr><th></th><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Line total</th><th>Ready</th><th></th></tr></thead>
               <tbody>{items.map(item => (
                 <tr key={item.id}>
+                  <td className="thumb-cell">{item.product_id && photoUrl.get(item.product_id)
+                    ? <a href={photoUrl.get(item.product_id)} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={photoUrl.get(item.product_id)} alt={item.product_name} loading="lazy" /></a>
+                    : <div className="order-thumb empty">—</div>}</td>
                   <td className="code-cell">{item.sku ?? "—"}</td>
                   <td>{item.product_name}{item.product_id === null && <div className="small muted">removed from catalog</div>}</td>
                   <td><input type="number" name={`qty_${item.id}`} defaultValue={Number(item.quantity)} min="0.01" step="any" style={{ width: 84 }} /></td>

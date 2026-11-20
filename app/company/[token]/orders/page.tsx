@@ -47,9 +47,12 @@ export default async function CompanyOrdersPage({ params }: { params: Promise<{ 
                   </span>
                 </summary>
                 <div className="table-wrap order-table"><table>
-                  <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Total</th><th>Status</th></tr></thead>
+                  <thead><tr><th></th><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Total</th><th>Status</th></tr></thead>
                   <tbody>{items.map(item => (
                     <tr key={item.id}>
+                      <td className="thumb-cell">{item.has_photo
+                        ? <a href={`/api/company/${token}/images/${item.product_id}`} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={`/api/company/${token}/images/${item.product_id}`} referrerPolicy="no-referrer" alt={item.product_name} loading="lazy" /></a>
+                        : <div className="order-thumb empty">—</div>}</td>
                       <td className="code-cell">{item.sku ?? "—"}</td><td>{item.product_name}</td>
                       <td>{Number(item.quantity).toLocaleString("en-GB")}</td>
                       <td>{item.unit_price === null ? "—" : `${item.currency} ${fmt(Number(item.unit_price))}`}</td>

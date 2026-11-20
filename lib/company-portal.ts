@@ -57,7 +57,7 @@ export async function readCompanyCatalog(token: string) {
 export async function readCompanyOrders(token: string) {
   const { db, link } = await companyScope(token);
   const payments = ",sourcing_company_payments(id,paid_on,amount,currency,method,note,status,entered_by,created_at)";
-  const lines = (prepared: boolean) => `id,order_no,status,note,created_at,sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency${prepared ? ",prepared_at" : ""})`;
+  const lines = (prepared: boolean) => `id,order_no,status,note,created_at,sourcing_company_order_items(id,sku,product_id,product_name,quantity,unit_price,currency${prepared ? ",prepared_at" : ""})`;
   const query = (columns: string) => db.from("sourcing_company_orders").select(columns)
     .eq("company_id", link.company_id).order("created_at", { ascending: false }).limit(100);
   const name = await companyName(db, link.company_id);
@@ -68,7 +68,21 @@ export async function readCompanyOrders(token: string) {
     if (!result.error) break;
   }
   if (result.error) throw new Error(INVALID_COMPANY_LINK);
-  return { companyName: name, orders: (result.data ?? []) as any[] };
+  const orders = (result.data ?? []) as any[];
+  // A line shows a photo only for products that are still marked for this company and have an approved, ready photo
+  // (exactly what the image route will serve).
+  const ids = Array.from(new Set(orders.flatMap(order => (order.sourcing_company_order_items ?? []).map((item: any) => item.product_id as string | null)).filter((value): value is string => !!value)));
+  const withPhoto = new Set<string>();
+  if (ids.length) {
+    const [assigned, photos] = await Promise.all([
+      db.from("sourcing_company_products").select("product_id").eq("company_id", link.company_id).in("product_id", ids),
+      db.from("sourcing_product_images").select("product_id").eq("ready", true).eq("approved", true).in("product_id", ids)
+    ]);
+    const allowed = new Set<string>((assigned.data ?? []).map((row: any) => row.product_id as string));
+    for (const row of photos.data ?? []) if (allowed.has(row.product_id)) withPhoto.add(row.product_id as string);
+  }
+  for (const order of orders) for (const item of order.sourcing_company_order_items ?? []) item.has_photo = !!item.product_id && withPhoto.has(item.product_id);
+  return { companyName: name, orders };
 }
 
 export async function readCompanyProposals(token: string) {
