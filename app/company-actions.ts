@@ -211,6 +211,20 @@ export async function removeCompanyOrderItemById(orderId: string, itemId: string
   done(orderId);
 }
 
+// Nexo marks one line (or every line) of a company order as prepared; the company sees it in its portal.
+async function setReady(orderId: string, itemId: string | null, ready: boolean) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId) || (itemId !== null && !UUID_PATTERN.test(itemId))) redirect("/company-orders");
+  const db = adminDb();
+  let query = db.from("sourcing_company_order_items").update({ prepared_at: ready ? new Date().toISOString() : null }).eq("order_id", orderId);
+  if (itemId) query = query.eq("id", itemId);
+  const { error } = await query;
+  if (error) orderBack(orderId, "Unable to update the ready mark. Run supabase/migrations/20261019_company_order_ready.sql first.");
+  done(orderId);
+}
+export async function setCompanyItemReadyById(orderId: string, itemId: string, ready: boolean) { return setReady(orderId, itemId, ready); }
+export async function setCompanyAllReadyById(orderId: string, ready: boolean) { return setReady(orderId, null, ready); }
+
 export async function deleteCompanyOrderById(orderId: string) {
   await requireSourcingAccess();
   if (!UUID_PATTERN.test(orderId)) redirect("/company-orders");

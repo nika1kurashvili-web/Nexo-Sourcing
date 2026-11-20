@@ -8,7 +8,7 @@ import { balanceTone } from "@/lib/orders";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LineSearch } from "@/components/LineSearch";
 import {
-  addCompanyOrderItemsAction, addCompanyPaymentAction, confirmCompanyPaymentById, deleteCompanyOrderById, deleteCompanyPaymentById, removeCompanyOrderItemById, saveCompanyOrderAction, setCompanyOrderStatusById
+  addCompanyOrderItemsAction, addCompanyPaymentAction, confirmCompanyPaymentById, deleteCompanyOrderById, deleteCompanyPaymentById, removeCompanyOrderItemById, saveCompanyOrderAction, setCompanyAllReadyById, setCompanyItemReadyById, setCompanyOrderStatusById
 } from "@/app/company-actions";
 
 export const dynamic = "force-dynamic";
@@ -24,12 +24,15 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
   await requireSourcingAccess();
   if (!UUID_PATTERN.test(id)) notFound();
   const db = adminDb();
-  const orderBase = "id,company_id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,product_id,sku,product_name,quantity,unit_price,currency,created_at)";
+  const paymentsPart = ",sourcing_company_payments(id,paid_on,amount,currency,method,note,status,entered_by,created_at)";
+  const orderColumns = (prepared: boolean) => `id,company_id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,product_id,sku,product_name,quantity,unit_price,currency,created_at${prepared ? ",prepared_at" : ""})`;
+  // Until the payments / ready-mark migrations have been run, the order still opens (without those parts).
   let paymentsReady = true;
-  let orderResult = await db.from("sourcing_company_orders")
-    .select(orderBase.replace("created_at)", "created_at),sourcing_company_payments(id,paid_on,amount,currency,method,note,status,entered_by,created_at)")).eq("id", id).maybeSingle();
-  // Until the payments migration has been run, the order still opens (without the payments part).
-  if (orderResult.error) { paymentsReady = false; orderResult = await db.from("sourcing_company_orders").select(orderBase).eq("id", id).maybeSingle(); }
+  let orderResult: any = null;
+  for (const [prepared, withPayments] of [[true, true], [false, true], [true, false], [false, false]] as [boolean, boolean][]) {
+    orderResult = await db.from("sourcing_company_orders").select(orderColumns(prepared) + (withPayments ? paymentsPart : "")).eq("id", id).maybeSingle();
+    if (!orderResult.error) { paymentsReady = withPayments; break; }
+  }
   const order = orderResult.data;
   if (!order) notFound();
   const items: any[] = [...(order.sourcing_company_order_items ?? [])].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
@@ -46,6 +49,7 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
   const payments: any[] = [...(order.sourcing_company_payments ?? [])].sort((a, b) => String(a.paid_on).localeCompare(String(b.paid_on)) || String(a.created_at).localeCompare(String(b.created_at)));
   const summary = paymentSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })), payments);
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tbilisi" });
+  const preparedCount = items.filter(item => item.prepared_at).length;
   const waiting = payments.filter(payment => payment.status === "pending").length;
   const currencyOptions = Array.from(new Set([...items.map(item => item.currency as string), "GEL", "USD", "EUR", "CNY"]));
 
@@ -88,7 +92,7 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
             {/* Enter inside a field must save, never remove a line: this is the first (default) submit button. */}
             <button type="submit" tabIndex={-1} aria-hidden="true" style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}>Save</button>
             <LineSearch><div className="table-wrap order-table"><table>
-              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Line total</th><th></th></tr></thead>
+              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Line total</th><th>Ready</th><th></th></tr></thead>
               <tbody>{items.map(item => (
                 <tr key={item.id}>
                   <td className="code-cell">{item.sku ?? "—"}</td>
@@ -97,6 +101,12 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
                   <td><input type="number" name={`price_${item.id}`} defaultValue={item.unit_price === null ? "" : Number(item.unit_price)} min="0" step="any" style={{ width: 96 }} /></td>
                   <td><select name={`cur_${item.id}`} defaultValue={item.currency}>{["GEL", "USD", "EUR", "CNY"].map(currency => <option key={currency} value={currency}>{currency}</option>)}</select></td>
                   <td className="num"><strong>{item.unit_price === null ? <span className="muted">no price</span> : `${item.currency} ${fmt(Number(item.quantity) * Number(item.unit_price))}`}</strong></td>
+                  <td><div className="product-actions">
+                    {item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}
+                    {order.status !== "cancelled" && (item.prepared_at
+                      ? <button className="btn secondary sm" type="submit" formAction={setCompanyItemReadyById.bind(null, order.id, item.id, false)}>Undo</button>
+                      : <button className="btn sm" type="submit" formAction={setCompanyItemReadyById.bind(null, order.id, item.id, true)}>Mark ready</button>)}
+                  </div></td>
                   <td><button className="btn danger sm" type="submit" formAction={removeCompanyOrderItemById.bind(null, order.id, item.id)} title="Remove from order">Remove</button></td>
                 </tr>
               ))}</tbody>
@@ -104,7 +114,12 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
             <label style={{ marginTop: 12, display: "block" }}>Note
               <textarea name="note" defaultValue={order.note ?? ""} maxLength={2000} rows={2} />
             </label>
-            <div style={{ marginTop: 12 }}><button className="btn" type="submit">Save changes</button></div>
+            <div className="product-actions" style={{ marginTop: 12 }}>
+              <button className="btn" type="submit">Save changes</button>
+              <span className="muted small">{preparedCount} of {items.length} ready</span>
+              <button className="btn secondary sm" type="submit" formAction={setCompanyAllReadyById.bind(null, order.id, true)} disabled={preparedCount === items.length || order.status === "cancelled"}>Mark all ready</button>
+              <button className="btn secondary sm" type="submit" formAction={setCompanyAllReadyById.bind(null, order.id, false)} disabled={preparedCount === 0}>Clear all marks</button>
+            </div>
           </form>
         )}
       </div>

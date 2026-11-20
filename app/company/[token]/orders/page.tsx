@@ -28,6 +28,7 @@ export default async function CompanyOrdersPage({ params }: { params: Promise<{ 
             const items: any[] = order.sourcing_company_order_items ?? [];
             const totals = lineTotals(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })));
             const status = STATUS[order.status] ?? STATUS.new;
+            const readyCount = items.filter(item => item.prepared_at).length;
             const payments: any[] = [...(order.sourcing_company_payments ?? [])].sort((a, b) => String(a.paid_on).localeCompare(String(b.paid_on)) || String(a.created_at).localeCompare(String(b.created_at)));
             const summary = paymentSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })), payments);
             return (
@@ -38,6 +39,7 @@ export default async function CompanyOrdersPage({ params }: { params: Promise<{ 
                   <span className="order-fold-end">
                     <strong>{totals.byCurrency.map(item => `${item.currency} ${fmt(item.total)}`).join(" + ") || "—"}</strong>
                     <span className={`badge ${status.badge}`}>{status.label}</span>
+                    {items.length > 0 && <span className={`badge ${readyCount === items.length ? "success" : ""}`}>{readyCount === items.length ? "✓ All ready" : `${readyCount} of ${items.length} ready`}</span>}
                     {summary.map(row => {
                       const tone = balanceTone(row);
                       return <span key={row.currency} className={`balance-pill ${tone}`}>{tone === "paid" ? `✓ ${row.currency} paid` : tone === "over" ? `▲ ${row.currency} ${fmt(Math.abs(row.balance))} over` : `${row.currency} ${fmt(row.balance)} to pay`}</span>;
@@ -45,13 +47,14 @@ export default async function CompanyOrdersPage({ params }: { params: Promise<{ 
                   </span>
                 </summary>
                 <div className="table-wrap order-table"><table>
-                  <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Total</th></tr></thead>
+                  <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Total</th><th>Status</th></tr></thead>
                   <tbody>{items.map(item => (
                     <tr key={item.id}>
                       <td className="code-cell">{item.sku ?? "—"}</td><td>{item.product_name}</td>
                       <td>{Number(item.quantity).toLocaleString("en-GB")}</td>
                       <td>{item.unit_price === null ? "—" : `${item.currency} ${fmt(Number(item.unit_price))}`}</td>
                       <td className="num">{item.unit_price === null ? "—" : `${item.currency} ${fmt(Number(item.quantity) * Number(item.unit_price))}`}</td>
+                      <td>{item.prepared_at ? <span className="badge success">✓ Ready</span> : <span className="muted">Preparing</span>}</td>
                     </tr>
                   ))}</tbody>
                 </table></div>

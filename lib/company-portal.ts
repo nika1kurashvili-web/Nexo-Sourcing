@@ -56,13 +56,17 @@ export async function readCompanyCatalog(token: string) {
 
 export async function readCompanyOrders(token: string) {
   const { db, link } = await companyScope(token);
-  const base = "id,order_no,status,note,created_at,sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency)";
-  const withPayments = base.replace(")", "),sourcing_company_payments(id,paid_on,amount,currency,method,note,status,entered_by,created_at)");
+  const payments = ",sourcing_company_payments(id,paid_on,amount,currency,method,note,status,entered_by,created_at)";
+  const lines = (prepared: boolean) => `id,order_no,status,note,created_at,sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency${prepared ? ",prepared_at" : ""})`;
   const query = (columns: string) => db.from("sourcing_company_orders").select(columns)
     .eq("company_id", link.company_id).order("created_at", { ascending: false }).limit(100);
-  const [name, first] = await Promise.all([companyName(db, link.company_id), query(withPayments)]);
-  // Until the payments migration has been run, the orders still load (just without payments).
-  const result = first.error ? await query(base) : first;
+  const name = await companyName(db, link.company_id);
+  // Until the payments / ready-mark migrations have been run, the orders still load (just without those parts).
+  let result: any = null;
+  for (const columns of [lines(true) + payments, lines(false) + payments, lines(true), lines(false)]) {
+    result = await query(columns);
+    if (!result.error) break;
+  }
   if (result.error) throw new Error(INVALID_COMPANY_LINK);
   return { companyName: name, orders: (result.data ?? []) as any[] };
 }
