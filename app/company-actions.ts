@@ -106,6 +106,12 @@ function orderBack(orderId: string, error?: string): never {
   redirect(`/company-orders/${orderId}${error ? `?error=${encodeURIComponent(error)}` : ""}`);
 }
 
+// Success: re-render the current page in place. (Redirecting to the same URL left the list stale until a manual reload.)
+function done(orderId: string): void {
+  revalidatePath(`/company-orders/${orderId}`);
+  revalidatePath("/company-orders");
+}
+
 function quantityOf(raw: unknown) {
   const text = String(raw ?? "").trim().replace(",", ".");
   if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
@@ -162,7 +168,7 @@ export async function saveCompanyOrderAction(orderId: string, formData: FormData
   if (formData.has("note")) {
     await db.from("sourcing_company_orders").update({ note: String(formData.get("note") ?? "").trim().slice(0, 2000) || null }).eq("id", orderId);
   }
-  orderBack(orderId);
+  done(orderId);
 }
 
 // Adds products (that Nexo marked for this company) with the quantities typed in the "add" list. Bound: orderId first.
@@ -193,7 +199,7 @@ export async function addCompanyOrderItemsAction(orderId: string, formData: Form
   if (!rows.length) orderBack(orderId, "Type a quantity next to the products you want to add.");
   const { error: insertError } = await db.from("sourcing_company_order_items").insert(rows);
   if (insertError) orderBack(orderId, "Unable to add the products.");
-  orderBack(orderId);
+  done(orderId);
 }
 
 export async function removeCompanyOrderItemById(orderId: string, itemId: string) {
@@ -202,7 +208,7 @@ export async function removeCompanyOrderItemById(orderId: string, itemId: string
   const db = adminDb();
   const { error } = await db.from("sourcing_company_order_items").delete().eq("id", itemId).eq("order_id", orderId);
   if (error) orderBack(orderId, "Unable to remove the product.");
-  orderBack(orderId);
+  done(orderId);
 }
 
 export async function deleteCompanyOrderById(orderId: string) {
@@ -236,7 +242,7 @@ export async function addCompanyPaymentAction(orderId: string, formData: FormDat
     status: "confirmed", entered_by: "staff", created_by: user.id, confirmed_at: now
   });
   if (error) orderBack(orderId, "Unable to record the payment. Run supabase/migrations/20261018_company_payments.sql first.");
-  orderBack(orderId);
+  done(orderId);
 }
 
 // Confirms a payment the company recorded; only confirmed payments reduce the balance.
@@ -247,7 +253,7 @@ export async function confirmCompanyPaymentById(orderId: string, paymentId: stri
   const { error } = await db.from("sourcing_company_payments").update({ status: "confirmed", confirmed_at: new Date().toISOString() })
     .eq("id", paymentId).eq("order_id", orderId);
   if (error) orderBack(orderId, "Unable to confirm the payment.");
-  orderBack(orderId);
+  done(orderId);
 }
 
 // Rejects a pending payment or deletes a recorded one.
@@ -257,5 +263,5 @@ export async function deleteCompanyPaymentById(orderId: string, paymentId: strin
   const db = adminDb();
   const { error } = await db.from("sourcing_company_payments").delete().eq("id", paymentId).eq("order_id", orderId);
   if (error) orderBack(orderId, "Unable to delete the payment.");
-  orderBack(orderId);
+  done(orderId);
 }

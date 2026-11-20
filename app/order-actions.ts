@@ -21,6 +21,12 @@ async function markChanged(db: any, orderId: string) {
   await db.from("sourcing_orders").update({ staff_changed_at: now, updated_at: now }).eq("id", orderId);
 }
 
+// Success: re-render the current page in place. (Redirecting to the same URL left the list stale until a manual reload.)
+function done(orderId: string): void {
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/orders");
+}
+
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
@@ -83,7 +89,7 @@ export async function addOrderItemsAction(formData: FormData) {
   const { error } = await db.from("sourcing_order_items").insert(rows);
   if (error) back(orderId, "Unable to add the products.");
   await markChanged(db, orderId);
-  back(orderId);
+  done(orderId);
 }
 
 // Saves quantity and price for every line in one go.
@@ -118,7 +124,7 @@ export async function saveOrderItemsAction(formData: FormData) {
     if (error) back(orderId, "Some changes could not be saved.");
   }
   if (updates.length) await markChanged(db, orderId);
-  back(orderId);
+  done(orderId);
 }
 
 async function decideProposals(orderId: string, itemId: string, decision: "approve" | "reject") {
@@ -150,7 +156,7 @@ async function decideProposals(orderId: string, itemId: string, decision: "appro
   }
   if ((items ?? []).length) await markChanged(db, orderId);
   if (decision === "approve") revalidatePath("/products");
-  back(orderId);
+  done(orderId);
 }
 // "All" buttons read the order from the form; per-line buttons get the ids bound in (see ...ById), because the
 // name/value of a server-action button is not reliable before the page is fully interactive.
@@ -169,7 +175,7 @@ async function removeItem(orderId: string, itemId: string) {
   if (error) back(orderId, "Unable to remove the product.");
   if (!data?.length) back(orderId, "That product was already removed.");
   await markChanged(db, orderId);
-  back(orderId);
+  done(orderId);
 }
 export async function removeOrderItemAction(formData: FormData) { return removeItem(text(formData, "order_id"), text(formData, "item")); }
 export async function removeOrderItemById(orderId: string, itemId: string) { return removeItem(orderId, itemId); }
@@ -186,7 +192,7 @@ async function setItemReady(orderId: string, itemId: string, ready: boolean) {
     .eq("id", itemId).eq("order_id", orderId).select("id");
   if (error || !data?.length) back(orderId, "Unable to update the prepared mark.");
   await markChanged(db, orderId);
-  back(orderId);
+  done(orderId);
 }
 export async function setItemReadyById(orderId: string, itemId: string, ready: boolean) { return setItemReady(orderId, itemId, ready); }
 
@@ -200,7 +206,7 @@ async function setAllReady(orderId: string, ready: boolean) {
     .update({ prepared_at: ready ? new Date().toISOString() : null }).eq("order_id", orderId);
   if (error) back(orderId, "Unable to update the prepared marks.");
   await markChanged(db, orderId);
-  back(orderId);
+  done(orderId);
 }
 export async function setAllReadyById(orderId: string, ready: boolean) { return setAllReady(orderId, ready); }
 
@@ -234,7 +240,7 @@ export async function setOrderStatusAction(formData: FormData) {
   const { error } = await db.from("sourcing_orders").update(patch).eq("id", orderId).eq("status", order.status);
   if (error) back(orderId, "Unable to change the status.");
   revalidatePath("/orders");
-  back(orderId);
+  done(orderId);
 }
 
 // The order name (shown to the supplier too). Must be unique; ORD-0007 style names are only the default.
@@ -249,7 +255,7 @@ export async function updateOrderNameAction(formData: FormData) {
   const { error } = await db.from("sourcing_orders").update({ order_no: name, updated_at: new Date().toISOString(), staff_changed_at: new Date().toISOString() }).eq("id", orderId);
   if (error) back(orderId, error.code === "23505" ? "Another order already has this name." : "Unable to rename the order.");
   revalidatePath("/orders");
-  back(orderId);
+  done(orderId);
 }
 
 export async function updateOrderNoteAction(formData: FormData) {
@@ -258,7 +264,7 @@ export async function updateOrderNoteAction(formData: FormData) {
   const db = adminDb();
   await loadOrder(db, orderId);
   await db.from("sourcing_orders").update({ note: text(formData, "note").slice(0, 5000) || null, updated_at: new Date().toISOString() }).eq("id", orderId);
-  back(orderId);
+  done(orderId);
 }
 
 // Nexo only: when the order should be finished / delivered. Empty clears it. Suppliers have no way to change it.
@@ -272,7 +278,7 @@ export async function setCompletionDateAction(formData: FormData) {
   const { error } = await db.from("sourcing_orders").update({ completion_date: date || null, updated_at: new Date().toISOString(), staff_changed_at: new Date().toISOString() }).eq("id", orderId);
   if (error) back(orderId, "Unable to save the completion date. Run the latest SQL migration (20261015_order_completion_date.sql) first.");
   revalidatePath("/orders");
-  back(orderId);
+  done(orderId);
 }
 
 export async function deleteOrderAction(formData: FormData) {
@@ -303,7 +309,7 @@ export async function addPaymentAction(formData: FormData) {
     order_id: orderId, paid_on: paidOn, amount, note: text(formData, "note").slice(0, 1000) || null, created_by: user.id
   });
   if (error) back(orderId, "Unable to record the payment.");
-  back(orderId);
+  done(orderId);
 }
 
 export async function deletePaymentAction(formData: FormData) {
@@ -313,5 +319,5 @@ export async function deletePaymentAction(formData: FormData) {
   const db = adminDb();
   await loadOrder(db, orderId);
   if (UUID_PATTERN.test(paymentId)) await db.from("sourcing_order_payments").delete().eq("id", paymentId).eq("order_id", orderId);
-  back(orderId);
+  done(orderId);
 }
