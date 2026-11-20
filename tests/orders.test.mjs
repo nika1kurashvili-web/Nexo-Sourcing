@@ -169,3 +169,19 @@ test("company order helpers", () => {
   assert.equal(totals.unpriced, 1);
   assert.equal(totals.totalQuantity, 10);
 });
+
+import { detectCompanyColumns, parseCompanyCells } from "../lib/company-prices.ts";
+test("company sell-price columns in the product sheet", () => {
+  const companies = [{ id: "c1", name: "Acme Ltd" }, { id: "c2", name: "Beta" }];
+  const header = ["Code (SKU)", "Name", "Sell price: Acme Ltd", "sell currency:  acme ltd", "Sell price: Beta", "Sell price: Nobody"];
+  const found = detectCompanyColumns(header, companies);
+  assert.deepEqual(found.columns.map(column => [column.index, column.kind, column.companyId]), [[2, "price", "c1"], [3, "currency", "c1"], [4, "price", "c2"]]);
+  assert.deepEqual(found.unknownNames, ["Nobody"]);
+  assert.ok(found.recognised.has(5) && !found.recognised.has(1));
+  assert.deepEqual(parseCompanyCells(["P1", "Cup", "12,5", "usd", "", ""], found.columns, companies).prices, [{ companyId: "c1", price: 12.5, currency: "USD" }]);
+  assert.deepEqual(parseCompanyCells(["P1", "Cup", "3", "", "4", ""], found.columns, companies).prices,
+    [{ companyId: "c1", price: 3, currency: null }, { companyId: "c2", price: 4, currency: null }]);
+  assert.deepEqual(parseCompanyCells(["P1", "Cup", "", "USD", "", ""], found.columns, companies).prices, []);
+  assert.match(parseCompanyCells(["P1", "Cup", "abc", "", "", ""], found.columns, companies).error ?? "", /Acme Ltd/);
+  assert.match(parseCompanyCells(["P1", "Cup", "5", "XYZ", "", ""], found.columns, companies).error ?? "", /currency/);
+});

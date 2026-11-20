@@ -1,4 +1,5 @@
 import { PRODUCT_NUMBERS, parseProductFields } from "@/lib/catalog-validation";
+import { currencyColumnLabel, detectCompanyColumns, parseCompanyCells, priceColumnLabel, type CompanyPrice, type CompanyRef } from "@/lib/company-prices";
 
 // Column layout of the product Excel sheet. The header row decides which columns are present,
 // so a sheet with fewer columns only updates those columns.
@@ -31,31 +32,43 @@ for (const column of SHEET_COLUMNS) {
   for (const alias of column.aliases ?? []) HEADER_LOOKUP.set(simple(alias), column.key);
 }
 
-export type ImportRow = { line: number; sku: string | null; fields: Record<string, string | number | null> };
+export type ImportRow = { line: number; sku: string | null; fields: Record<string, string | number | null>; companyPrices: CompanyPrice[] };
 export type ImportParse = { columns: string[]; rows: ImportRow[]; errors: string[]; warnings: string[] };
 
-export function exportRows(products: Record<string, any>[], supplierNames?: Map<string, string>) {
-  const header = [...(supplierNames ? ["Supplier (info only)"] : []), ...SHEET_COLUMNS.map(column => column.label)];
+// Header cells of the company columns (two per company), appended after the normal columns.
+export function companyHeader(companies: CompanyRef[]) {
+  return companies.flatMap(company => [priceColumnLabel(company.name), currencyColumnLabel(company.name)]);
+}
+
+// assigned: "productId|companyId" -> that company's sell price and currency.
+export function exportRows(products: Record<string, any>[], supplierNames?: Map<string, string>, companies: CompanyRef[] = [], assigned: Map<string, { sell_price: number | string | null; currency: string }> = new Map()) {
+  const header = [...(supplierNames ? ["Supplier (info only)"] : []), ...SHEET_COLUMNS.map(column => column.label), ...companyHeader(companies)];
   const rows = products.map(product => [
     ...(supplierNames ? [supplierNames.get(product.supplier_id) ?? ""] : []),
     ...SHEET_COLUMNS.map(column => {
       const value = product[column.key];
       if (value === null || value === undefined) return null;
       return PRODUCT_NUMBERS.includes(column.key as never) ? Number(value) : String(value);
+    }),
+    ...companies.flatMap(company => {
+      const row = assigned.get(`${product.id}|${company.id}`);
+      return row ? [row.sell_price === null ? null : Number(row.sell_price), row.currency] : [null, null];
     })
   ]);
   return [header, ...rows];
 }
 
 // Turns raw sheet rows (first row = headers) into validated product rows. Pure and side-effect free.
-export function parseProductSheet(sheet: string[][]): ImportParse {
+export function parseProductSheet(sheet: string[][], companies: CompanyRef[] = []): ImportParse {
   const warnings: string[] = [];
   if (!sheet.length) return { columns: [], rows: [], errors: ["The sheet is empty."], warnings: [] };
   const header = sheet[0].map(cell => HEADER_LOOKUP.get(simple(String(cell ?? ""))) ?? null);
   const columns = Array.from(new Set(header.filter((key): key is string => !!key)));
   if (!columns.includes("name")) return { columns, rows: [], errors: ['The first row must contain a "Name" column.'], warnings: [] };
-  const unknown = sheet[0].filter((cell, index) => String(cell ?? "").trim() && !header[index]);
+  const company = detectCompanyColumns(sheet[0], companies);
+  const unknown = sheet[0].filter((cell, index) => String(cell ?? "").trim() && !header[index] && !company.recognised.has(index));
   if (unknown.length) warnings.push(`Ignored unknown column(s): ${unknown.slice(0, 5).join(", ")}.`);
+  if (company.unknownNames.length) warnings.push(`Ignored sell-price column(s) for unknown company: ${company.unknownNames.slice(0, 5).join(", ")}. The name must match a company exactly.`);
 
   const rows: ImportRow[] = [];
   const seen = new Map<string, number>();
@@ -78,6 +91,8 @@ export function parseProductSheet(sheet: string[][]): ImportParse {
       }
       input[key] = value;
     });
+    const cells = parseCompanyCells(raw, company.columns, companies);
+    if (cells.error) { problems.push(`Row ${line}: ${cells.error}`); continue; }
     let fields;
     try { fields = parseProductFields(input, { staff: true }); }
     catch (error) { problems.push(`Row ${line}: ${error instanceof Error ? error.message : "invalid data"}`); continue; }
@@ -97,7 +112,7 @@ export function parseProductSheet(sheet: string[][]): ImportParse {
         sku = text;
       }
     }
-    rows.push({ line, sku, fields: kept });
+    rows.push({ line, sku, fields: kept, companyPrices: cells.prices });
   }
   return { columns, rows, errors: problems, warnings };
 }

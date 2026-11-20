@@ -35,7 +35,7 @@ export function ProductExcel({ suppliers, defaultSupplierId = "" }: { suppliers:
         <a className="btn secondary" href="/products/export?template=1">Download empty template</a>
       </div>
       <p className="small muted" style={{ margin: 0 }}>
-        One supplier per file. A row whose <strong>Code (SKU)</strong> already exists updates that product; a new or empty code creates a product. Photos are not part of the Excel file: upload them separately below, named after the code.
+        One supplier per file. A row whose <strong>Code (SKU)</strong> already exists updates that product; a new or empty code creates a product. Each company has "Sell price" and "Sell currency" columns: a filled price shows the product to that company at that price (empty = unchanged). Photos are not part of the Excel file: upload them separately below, named after the code.
       </p>
       <div className="form-grid two">
         <label>Supplier *
@@ -54,7 +54,7 @@ export function ProductExcel({ suppliers, defaultSupplierId = "" }: { suppliers:
       {checked && (
         <div className={checked.ok ? "small" : "notice"} role="status">
           {checked.error && <div>{checked.error}</div>}
-          {checked.ok && <div><strong>File is valid:</strong> {checked.created} new product(s), {checked.updated} to update. Press "2. Import" to apply.</div>}
+          {checked.ok && <div><strong>File is valid:</strong> {checked.created} new product(s), {checked.updated} to update{checked.prices ? `, ${checked.prices} company price(s)` : ""}. Press "2. Import" to apply.</div>}
           {checked.errors.length > 0 && <><div><strong>Nothing was imported. Fix these rows and check again:</strong></div>
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{checked.errors.map((error, index) => <li key={index}>{error}</li>)}</ul></>}
           {checked.warnings.map((warning, index) => <div key={index} className="muted">{warning}</div>)}
@@ -62,7 +62,7 @@ export function ProductExcel({ suppliers, defaultSupplierId = "" }: { suppliers:
       )}
       {done && (
         <div className={done.ok ? "small" : "notice"} role="status">
-          {done.ok ? <strong>Imported: {done.created} created, {done.updated} updated.</strong> : <strong>The import did not finish.</strong>}
+          {done.ok ? <strong>Imported: {done.created} created, {done.updated} updated{done.prices ? `, ${done.prices} company price(s) saved` : ""}.</strong> : <strong>The import did not finish.</strong>}
           {done.error && <div>{done.error}</div>}
           {done.errors.map((error, index) => <div key={index}>{error}</div>)}
           {(done.created > 0 || done.updated > 0) && <div style={{ marginTop: 8 }}><a className="btn" href="/products">Show products</a></div>}
