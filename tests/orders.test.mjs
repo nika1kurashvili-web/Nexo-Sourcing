@@ -145,3 +145,27 @@ test("seen state for the supplier's view of an order", () => {
   assert.deepEqual(seenState({ status: "confirmed", supplier_seen_at: "2026-11-09T11:00:00Z", staff_changed_at: "2026-11-09T12:00:00Z" }), { tone: "changed", text: "Changes not seen yet" });
   assert.deepEqual(seenState({ status: "sent", supplier_seen_at: "2026-11-09T11:00:00Z" }), { tone: "seen", text: "Seen by supplier" });
 });
+
+import { lineTotals as companyLineTotals, parseOrderLines, parseQuantityText } from "../lib/company-orders.ts";
+test("company order helpers", () => {
+  assert.equal(parseQuantityText("12"), 12);
+  assert.equal(parseQuantityText("2,5"), 2.5);
+  assert.equal(parseQuantityText("0"), null);
+  assert.equal(parseQuantityText("-1"), null);
+  assert.equal(parseQuantityText("1.234"), null);
+  assert.equal(parseQuantityText(""), null);
+  const id = "11111111-1111-4111-8111-111111111111";
+  assert.deepEqual(parseOrderLines([{ productId: id, quantity: "3" }]), [{ productId: id, quantity: 3 }]);
+  assert.throws(() => parseOrderLines([]));
+  assert.throws(() => parseOrderLines([{ productId: "x", quantity: 1 }]));
+  assert.throws(() => parseOrderLines([{ productId: id, quantity: 1 }, { productId: id, quantity: 2 }]));
+  assert.throws(() => parseOrderLines([{ productId: id, quantity: 1, price: 1 }]));
+  assert.throws(() => parseOrderLines([{ productId: id, quantity: "abc" }]));
+  const totals = companyLineTotals([
+    { quantity: 2, unit_price: 10, currency: "GEL" }, { quantity: 1, unit_price: 5.5, currency: "GEL" },
+    { quantity: 3, unit_price: 2, currency: "USD" }, { quantity: 4, unit_price: null, currency: "GEL" }
+  ]);
+  assert.deepEqual(totals.byCurrency, [{ currency: "GEL", total: 25.5 }, { currency: "USD", total: 6 }]);
+  assert.equal(totals.unpriced, 1);
+  assert.equal(totals.totalQuantity, 10);
+});

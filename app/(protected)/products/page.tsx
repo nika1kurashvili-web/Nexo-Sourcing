@@ -13,6 +13,7 @@ import { saveCostSettingsAction } from "@/app/cost-actions";
 import { COST_DEFAULTS, COST_FIELDS, SHIPPING_METHODS, computeCost, settingKey, type CostSettings } from "@/lib/landed-cost";
 import { ProductExcel } from "@/components/ProductExcel";
 import { BulkPhotoUpload } from "@/components/BulkPhotoUpload";
+import { ProductCompanies } from "@/components/ProductCompanies";
 
 const PAGE_SIZE = 48;
 
@@ -109,7 +110,7 @@ function DecisionForms({ kind, id, approveLabel, rejectLabel }: { kind: "product
 }
 
 export default async function ProductsPage({ searchParams }: {
-  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string; cost_error?: string }>;
+  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string; cost_error?: string; company_error?: string }>;
 }) {
   const params = await searchParams;
   await requireSourcingAccess();
@@ -193,6 +194,15 @@ export default async function ProductsPage({ searchParams }: {
   }
 
   const visible = allProducts;
+  // Which companies see each product (Nexo only). A missing table just hides this editor.
+  const [companiesResult, assignedResult] = await Promise.all([
+    db.from("sourcing_companies").select("id,name").order("name"),
+    visible.length ? db.from("sourcing_company_products").select("product_id,company_id,sell_price,currency").in("product_id", visible.map(product => product.id)) : Promise.resolve({ data: [], error: null })
+  ]);
+  const companyPortalReady = !companiesResult.error && !assignedResult.error;
+  const companyList: any[] = companiesResult.data ?? [];
+  const assignedByProduct = new Map<string, any[]>();
+  for (const row of (assignedResult.data ?? []) as any[]) assignedByProduct.set(row.product_id, [...(assignedByProduct.get(row.product_id) ?? []), row]);
   const pageCount = Math.max(1, Math.ceil(totalProducts / PAGE_SIZE));
   const pageHref = (target: number) => {
     const query = new URLSearchParams();
@@ -211,6 +221,7 @@ export default async function ProductsPage({ searchParams }: {
         <div><h1>Products</h1><div className="muted">Supplier catalog: what each supplier offers, with photos and full details</div></div>
       </div>
 
+      {params.company_error && <div className="notice">{params.company_error}</div>}
       <form method="get" className="card filter-bar">
         <label>Supplier
           <select name="supplier" defaultValue={supplierFilter}>
@@ -348,6 +359,12 @@ export default async function ProductsPage({ searchParams }: {
                 {product.specifications && <p className="product-text muted">{product.specifications}</p>}
                 {product.internal_note && <p className="product-text"><strong>Internal:</strong> {product.internal_note}</p>}
                 <div className="product-actions">
+                  {companyPortalReady && product.status === "approved" && (
+                    <details style={{ width: "100%" }}>
+                      <summary className="btn secondary" style={{ display: "inline-flex" }}>Companies &amp; sell price ({(assignedByProduct.get(product.id) ?? []).length})</summary>
+                      <div style={{ marginTop: 12 }}><ProductCompanies productId={product.id} companies={companyList} assigned={assignedByProduct.get(product.id) ?? []} /></div>
+                    </details>
+                  )}
                   <details style={{ width: "100%" }}>
                     <summary className="btn secondary" style={{ display: "inline-flex" }}>Edit</summary>
                     <div style={{ marginTop: 12 }}><ProductEditor mode="edit" product={product} photoCount={productImages.length} /></div>

@@ -1,12 +1,27 @@
 import { createCompanyAction } from "@/app/actions";
 import { requireSourcingAccess } from "@/lib/auth";
 import { CompanyEditForm } from "@/components/CompanyEditForm";
+import { CompanyLinkControls } from "@/components/CompanyLinkControls";
+import { adminDb } from "@/lib/admin-db";
+import { companyLinkUrl, decryptShareToken } from "@/lib/share-link-crypto";
 
 export default async function CompaniesPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const params = await searchParams;
   const { supabase } = await requireSourcingAccess();
   const { data } = await supabase.from("sourcing_companies").select("*").order("name");
   const companies = data ?? [];
+
+  // Portal links (the tables are closed to browser clients, so they are read with the server key).
+  const linkByCompany = new Map<string, { id: string; url: string | null }>();
+  let linksMissing = false;
+  try {
+    const { data: links, error } = await adminDb().from("sourcing_company_links").select("id,company_id,token_encrypted").eq("active", true);
+    if (error) linksMissing = true;
+    for (const link of links ?? []) {
+      const token = decryptShareToken(link.token_encrypted);
+      linkByCompany.set(link.company_id, { id: link.id, url: token ? companyLinkUrl(token) : null });
+    }
+  } catch { linksMissing = true; }
 
   return (
     <>
@@ -37,6 +52,15 @@ export default async function CompaniesPage({ searchParams }: { searchParams: Pr
           )}
         </div>
       </div>
+      <details className="card" style={{ marginTop: 14 }}>
+        <summary>Company portal links ({linkByCompany.size} active)</summary>
+        <p className="small muted">Give a company its link: it sees only the products you marked for it (with your sell price, never the supplier), can send you orders and suggest new products. In Products, open a product's "Companies &amp; sell price" to choose who sees it.</p>
+        {linksMissing && <div className="notice">Run supabase/migrations/20261017_company_portal.sql in the Supabase SQL Editor to enable company links.</div>}
+        <div className="stack">
+          {companies.map((company: any) => <CompanyLinkControls key={company.id} company={{ id: company.id, name: company.name }} link={linkByCompany.get(company.id) ?? null} />)}
+          {companies.length === 0 && <div className="muted">Add a company first.</div>}
+        </div>
+      </details>
     </>
   );
 }

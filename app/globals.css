@@ -180,3 +180,11 @@ a:hover > .order-thumb{border-color:#7a8796}
 .seen-pill.unseen{background:#fdeceb;border-color:#f2b8b3;color:#b42318}
 .seen-pill.changed{background:#fff4d6;border-color:#f0d78a;color:#8a5a00}
 .seen-pill.seen{background:#e6f6ec;border-color:#9fd6b2;color:#14633a}
+
+.notice.success{border-color:#9fd6b2;background:#e6f6ec;color:#14633a}
+.company-photo{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:10px;background:#eef3f8;display:block}
+.company-photo.empty{display:flex;align-items:center;justify-content:center;color:#7b8794;font-size:13px}
+.company-bar{position:sticky;bottom:10px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-top:14px;box-shadow:0 6px 24px rgba(15,23,42,.18);z-index:5}
+.company-assign{display:grid;grid-template-columns:minmax(0,1fr) 92px 70px;gap:6px;align-items:center}
+.company-assign-name{display:flex;gap:6px;align-items:center;min-width:0;overflow-wrap:anywhere}
+.company-assign input[type=text],.company-assign input:not([type]),.company-assign select{min-width:0;width:100%}

@@ -3,7 +3,8 @@ import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  if (path === "/supplier" || path.startsWith("/supplier/") || path === "/api/supplier" || path.startsWith("/api/supplier/") || path.startsWith("/api/supplier-catalog/")) {
+  if (path === "/supplier" || path.startsWith("/supplier/") || path === "/api/supplier" || path.startsWith("/api/supplier/") || path.startsWith("/api/supplier-catalog/")
+    || path === "/company" || path.startsWith("/company/") || path.startsWith("/api/company/")) {
     const response = NextResponse.next();
     response.headers.set("Cache-Control", "private, no-store, max-age=0");
     response.headers.set("Referrer-Policy", "no-referrer");
