@@ -6,6 +6,7 @@ import { UUID_PATTERN } from "@/lib/catalog-validation";
 import { PAYMENT_METHODS, lineProfit, lineTotals, paymentMethodLabel, paymentSummary, profitSummary } from "@/lib/company-orders";
 import { balanceTone } from "@/lib/orders";
 import { BUCKET } from "@/lib/supplier-portal";
+import { COST_DEFAULTS, COST_FIELDS, SHIPPING_METHODS, computeCost, settingKey, type CostSettings } from "@/lib/landed-cost";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LineSearch } from "@/components/LineSearch";
 import {
@@ -57,14 +58,26 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
   const items: any[] = [...(order.sourcing_company_order_items ?? [])].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
 
   const productIds = Array.from(new Set(items.map(item => item.product_id).filter(Boolean))) as string[];
-  const [photoUrl, costResult] = await Promise.all([
+  const [photoUrl, costResult, settingsResult] = await Promise.all([
     photoUrlsFor(db, items.map(item => item.product_id)),
-    productIds.length ? db.from("sourcing_products").select("id,price,currency").in("id", productIds) : Promise.resolve({ data: [] as any[] })
+    productIds.length
+      ? db.from("sourcing_products").select("id,price,currency,shipping_method,qty_in_box,weight_kg,box_length_cm,box_width_cm,box_height_cm").in("id", productIds)
+      : Promise.resolve({ data: [] as any[] }),
+    db.from("sourcing_settings").select("key,value")
   ]);
-  // Staff-only: the supplier's current catalog price of each product.
-  const costOf = new Map<string, { price: number | null; currency: string | null }>(
-    ((costResult as any).data ?? []).map((row: any) => [row.id as string, { price: row.price === null || row.price === undefined ? null : Number(row.price), currency: (row.currency as string | null) ?? null }]));
-  const profit = profitSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency, cost: item.product_id ? costOf.get(item.product_id) : undefined })));
+  // Staff-only: landed cost per piece in GEL (same numbers as the Products page; land-transport rates unless a product is marked air).
+  const costSettings: CostSettings = { land: { ...COST_DEFAULTS.land }, air: { ...COST_DEFAULTS.air } };
+  const stored = new Map<string, number>(((settingsResult as any).data ?? []).map((row: any) => [row.key as string, Number(row.value)]));
+  for (const method of SHIPPING_METHODS) for (const field of COST_FIELDS) {
+    const value = stored.get(settingKey(method.value, field.key));
+    if (value !== undefined && Number.isFinite(value)) costSettings[method.value][field.key] = value;
+  }
+  const rates = { usd_gel: costSettings.land.usd_gel, cny_per_gel: costSettings.land.cny_per_gel };
+  const costOf = new Map<string, number | null>(((costResult as any).data ?? []).map((row: any) => {
+    const result = computeCost(row, costSettings);
+    return [row.id as string, result.ok ? result.total : null];
+  }));
+  const profit = profitSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency, costGel: item.product_id ? costOf.get(item.product_id) : null })), rates);
 
   const { data: assigned } = await db.from("sourcing_company_products")
     .select("product_id,sell_price,currency,sourcing_products!inner(id,sku,name,status)")
@@ -98,7 +111,7 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
           <span className={`badge ${status.badge}`}>{status.label}</span>
           <span className="badge">{items.length} product{items.length === 1 ? "" : "s"} · {totals.totalQuantity.toLocaleString("en-GB")} pcs</span>
           <span className="badge">{totals.byCurrency.map(item => `${item.currency} ${fmt(item.total)}`).join(" + ") || "No prices"}</span>
-          {profit.byCurrency.map(row => <span key={`profit-${row.currency}`} className={`badge ${row.profit >= 0 ? "success" : "danger"}`} title="Sell price minus supplier price">Profit {row.currency} {fmt(row.profit)}</span>)}
+          {profit.counted > 0 && <span className={`badge ${profit.profit >= 0 ? "success" : "danger"}`} title="Sell price minus landed cost, in GEL">Profit GEL {fmt(profit.profit)}</span>}
           {summary.map(row => {
             const tone = balanceTone(row);
             return <span key={row.currency} className={`balance-pill ${tone}`}>{tone === "paid" ? `✓ ${row.currency} paid in full` : tone === "over" ? `▲ ${row.currency} ${fmt(Math.abs(row.balance))} over` : `${row.currency} ${fmt(row.balance)} to pay`}</span>;
@@ -140,8 +153,8 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
                   <td><select name={`cur_${item.id}`} defaultValue={item.currency}>{["GEL", "USD", "EUR", "CNY"].map(currency => <option key={currency} value={currency}>{currency}</option>)}</select></td>
                   <td className="num"><strong>{item.unit_price === null ? <span className="muted">no price</span> : `${item.currency} ${fmt(Number(item.quantity) * Number(item.unit_price))}`}</strong></td>
                   <td className="num">{(() => {
-                    const result = lineProfit({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency }, item.product_id ? costOf.get(item.product_id) : undefined);
-                    return result ? <span title={`Cost ${item.currency} ${fmt(result.cost)}`} style={{ color: result.profit < 0 ? "var(--danger, #b42318)" : undefined }}>{fmt(result.profit)}</span> : <span className="muted">—</span>;
+                    const result = lineProfit({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency }, item.product_id ? costOf.get(item.product_id) : null, rates);
+                    return result ? <span title={`Cost GEL ${fmt(result.cost)}`} style={{ color: result.profit < 0 ? "var(--danger, #b42318)" : undefined }}>{fmt(result.profit)}</span> : <span className="muted">—</span>;
                   })()}</td>
                   <td><div className="product-actions">
                     {item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}
@@ -156,13 +169,14 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
             <label style={{ marginTop: 12, display: "block" }}>Note
               <textarea name="note" defaultValue={order.note ?? ""} maxLength={2000} rows={2} />
             </label>
-            {profit.byCurrency.length > 0 && (
+            {profit.counted > 0 && (
               <p className="small muted" style={{ marginBottom: 0 }}>
-                Profit = sell price minus the supplier's current catalog price (only you see this).
-                {" "}Total: {profit.byCurrency.map(row => `${row.currency} ${fmt(row.profit)} (revenue ${fmt(row.revenue)}, cost ${fmt(row.cost)})`).join(" · ")}
-                {profit.skipped > 0 && ` · ${profit.skipped} line${profit.skipped === 1 ? "" : "s"} not counted (no price, or a different currency).`}
+                Profit (GEL, only you see this) = sell price minus landed cost per piece. Sell prices in USD/CNY are converted with the land-transport rates (USD × {rates.usd_gel}, CNY ÷ {rates.cny_per_gel}).
+                {" "}Total: revenue {fmt(profit.revenue)}, cost {fmt(profit.cost)}, profit {fmt(profit.profit)}
+                {profit.skipped > 0 && ` · ${profit.skipped} line${profit.skipped === 1 ? "" : "s"} not counted (no sell price, or the landed cost cannot be computed: set price, box quantity and box size or weight on the product).`}
               </p>
             )}
+            {profit.counted === 0 && items.length > 0 && <p className="small muted" style={{ marginBottom: 0 }}>Profit is not shown yet: no line has both a sell price and a computable landed cost (set price, box quantity and box size or weight on the products).</p>}
             <div className="product-actions" style={{ marginTop: 12 }}>
               <button className="btn" type="submit">Save changes</button>
               <span className="muted small">{preparedCount} of {items.length} ready</span>

@@ -94,24 +94,34 @@ export function paymentSummary(
   }));
 }
 
-// Profit of a company order (staff only): sell price minus the supplier's catalog price.
-// A line counts only when both prices exist and are in the same currency; the rest is reported as "skipped".
-export function lineProfit(line: { quantity: number; unit_price: number | null; currency: string }, cost: { price: number | null; currency: string | null } | undefined) {
-  if (line.unit_price === null || !cost || cost.price === null || cost.currency !== line.currency) return null;
-  const revenue = line.quantity * line.unit_price;
-  const spent = line.quantity * cost.price;
-  return { revenue, cost: spent, profit: revenue - spent };
+// Profit of a company order (staff only), all in GEL:
+//   revenue = sell price converted to GEL with the land-transport rates (USD x usd_gel, CNY / cny_per_gel)
+//   cost    = the product's landed cost per piece in GEL (computed on the Products page)
+// A line is counted only when it has a sell price in GEL/USD/CNY and a computable landed cost; the rest is "skipped".
+export type GelRates = { usd_gel: number; cny_per_gel: number };
+
+export function toGel(amount: number, currency: string, rates: GelRates): number | null {
+  if (currency === "GEL") return amount;
+  if (currency === "USD") return amount * rates.usd_gel;
+  if (currency === "CNY") return amount / rates.cny_per_gel;
+  return null;
 }
 
-export function profitSummary(lines: { quantity: number; unit_price: number | null; currency: string; cost?: { price: number | null; currency: string | null } }[]) {
-  const byCurrency = new Map<string, { currency: string; revenue: number; cost: number; profit: number }>();
-  let skipped = 0;
+export function lineProfit(line: { quantity: number; unit_price: number | null; currency: string }, costGel: number | null | undefined, rates: GelRates) {
+  if (line.unit_price === null || costGel === null || costGel === undefined) return null;
+  const sellGel = toGel(line.unit_price, line.currency, rates);
+  if (sellGel === null) return null;
+  const revenue = line.quantity * sellGel;
+  const cost = line.quantity * costGel;
+  return { revenue, cost, profit: revenue - cost };
+}
+
+export function profitSummary(lines: { quantity: number; unit_price: number | null; currency: string; costGel?: number | null }[], rates: GelRates) {
+  const total = { revenue: 0, cost: 0, profit: 0, counted: 0, skipped: 0 };
   for (const line of lines) {
-    const result = lineProfit(line, line.cost);
-    if (!result) { skipped++; continue; }
-    const row = byCurrency.get(line.currency) ?? { currency: line.currency, revenue: 0, cost: 0, profit: 0 };
-    row.revenue += result.revenue; row.cost += result.cost; row.profit += result.profit;
-    byCurrency.set(line.currency, row);
+    const result = lineProfit(line, line.costGel, rates);
+    if (!result) { total.skipped++; continue; }
+    total.revenue += result.revenue; total.cost += result.cost; total.profit += result.profit; total.counted++;
   }
-  return { byCurrency: Array.from(byCurrency.values()).sort((a, b) => a.currency.localeCompare(b.currency)), skipped };
+  return total;
 }
