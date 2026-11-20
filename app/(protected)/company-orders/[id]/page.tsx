@@ -72,6 +72,11 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
   const inOrder = new Set(items.map(item => item.product_id).filter(Boolean));
   const addable: any[] = (assigned ?? []).filter((row: any) => !inOrder.has(row.product_id))
     .sort((a: any, b: any) => String(a.sourcing_products.name).localeCompare(String(b.sourcing_products.name)));
+  // Photos for the "add products" list too (only when the list is short enough to stay fast).
+  if (addable.length <= 40) {
+    const more = await photoUrlsFor(db, addable.map((row: any) => row.product_id).filter((productId: string) => !photoUrl.has(productId)));
+    more.forEach((url, productId) => photoUrl.set(productId, url));
+  }
 
   const totals = lineTotals(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })));
   const status = STATUS[order.status] ?? STATUS.new;
@@ -216,9 +221,12 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
         {addable.length === 0 ? <div className="muted" style={{ marginTop: 10 }}>No more products are marked for this company. Mark products in Products → "Companies &amp; sell price".</div> : (
           <form action={addCompanyOrderItemsAction.bind(null, order.id)} style={{ marginTop: 12 }}>
             <LineSearch><div className="table-wrap order-table"><table>
-              <thead><tr><th>Code</th><th>Product</th><th>Sell price</th><th>Quantity</th></tr></thead>
+              <thead><tr><th></th><th>Code</th><th>Product</th><th>Sell price</th><th>Quantity</th></tr></thead>
               <tbody>{addable.map((row: any) => (
                 <tr key={row.product_id}>
+                  <td className="thumb-cell">{photoUrl.get(row.product_id)
+                    ? <a href={photoUrl.get(row.product_id)} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={photoUrl.get(row.product_id)} alt={row.sourcing_products.name} loading="lazy" /></a>
+                    : <div className="order-thumb empty">—</div>}</td>
                   <td className="code-cell">{row.sourcing_products.sku ?? "—"}</td>
                   <td>{row.sourcing_products.name}</td>
                   <td>{row.sell_price === null ? <span className="muted">no price</span> : `${row.currency} ${fmt(Number(row.sell_price))}`}</td>
