@@ -73,10 +73,13 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
     if (value !== undefined && Number.isFinite(value)) costSettings[method.value][field.key] = value;
   }
   const rates = { usd_gel: costSettings.land.usd_gel, cny_per_gel: costSettings.land.cny_per_gel };
-  const costOf = new Map<string, number | null>(((costResult as any).data ?? []).map((row: any) => {
+  const costOf = new Map<string, number | null>();
+  const costReason = new Map<string, string>();
+  for (const row of (costResult as any).data ?? []) {
     const result = computeCost(row, costSettings);
-    return [row.id as string, result.ok ? result.total : null];
-  }));
+    costOf.set(row.id as string, result.ok ? result.total : null);
+    if (!result.ok) costReason.set(row.id as string, result.reason);
+  }
   const profit = profitSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency, costGel: item.product_id ? costOf.get(item.product_id) : null })), rates);
 
   const { data: assigned } = await db.from("sourcing_company_products")
@@ -154,7 +157,7 @@ export default async function EditCompanyOrderPage({ params, searchParams }: { p
                   <td className="num"><strong>{item.unit_price === null ? <span className="muted">no price</span> : `${item.currency} ${fmt(Number(item.quantity) * Number(item.unit_price))}`}</strong></td>
                   <td className="num">{(() => {
                     const result = lineProfit({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency }, item.product_id ? costOf.get(item.product_id) : null, rates);
-                    return result ? <span title={`Cost GEL ${fmt(result.cost)}`} style={{ color: result.profit < 0 ? "var(--danger, #b42318)" : undefined }}>{fmt(result.profit)}</span> : <span className="muted">—</span>;
+                    return result ? <span title={`Cost GEL ${fmt(result.cost)}`} style={{ color: result.profit < 0 ? "var(--danger, #b42318)" : undefined }}>{fmt(result.profit)}</span> : <span className="muted small" title="Profit cannot be computed for this line">{item.unit_price === null ? "no sell price" : !item.product_id ? "product removed" : costReason.get(item.product_id) ?? "—"}</span>;
                   })()}</td>
                   <td><div className="product-actions">
                     {item.prepared_at ? <span className="badge success" title={new Date(item.prepared_at).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi" })}>✓ Ready</span> : <span className="muted">—</span>}

@@ -1,7 +1,8 @@
 import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { BUCKET } from "@/lib/supplier-portal";
-import { lineTotals, paymentSummary } from "@/lib/company-orders";
+import { lineProfit, lineTotals, paymentSummary, profitSummary } from "@/lib/company-orders";
+import { loadCosts, photoUrlsFor } from "@/lib/company-order-data";
 import { balanceTone } from "@/lib/orders";
 import Link from "next/link";
 import { createCompanyOrderAction, setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
@@ -18,20 +19,24 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
   const { error: pageError } = await searchParams;
   await requireSourcingAccess();
   const db = adminDb();
-  const orderBase = "id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency)";
+  const itemColumns = (prepared: boolean) => `sourcing_company_order_items(id,sku,product_id,product_name,quantity,unit_price,currency${prepared ? ",prepared_at" : ""})`;
+  const orderColumns = (prepared: boolean, payments: boolean) =>
+    `id,order_no,status,note,created_at,sourcing_companies(name),${itemColumns(prepared)}${payments ? ",sourcing_company_payments(amount,currency,status)" : ""}`;
+  const loadOrders = (prepared: boolean, payments: boolean) => db.from("sourcing_company_orders").select(orderColumns(prepared, payments))
+    .order("created_at", { ascending: false }).limit(200);
   const [companiesResult, firstOrdersResult, proposalsResult] = await Promise.all([
     db.from("sourcing_companies").select("id,name").order("name"),
-    db.from("sourcing_company_orders")
-      .select("id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency),sourcing_company_payments(amount,currency,status)")
-      .order("created_at", { ascending: false }).limit(200),
+    loadOrders(true, true),
     db.from("sourcing_company_proposals")
       .select("id,name,description,link,quantity,status,created_at,sourcing_companies(name),sourcing_company_proposal_images(id,object_path)")
       .order("created_at", { ascending: false }).limit(200)
   ]);
-  // Until the payments migration has been run, the orders still load (just without payments).
-  const ordersResult = firstOrdersResult.error
-    ? await db.from("sourcing_company_orders").select(orderBase).order("created_at", { ascending: false }).limit(200)
-    : firstOrdersResult;
+  // Until the payments / ready-mark migrations have been run, the orders still load (just without those parts).
+  let ordersResult: any = firstOrdersResult;
+  for (const [prepared, payments] of [[false, true], [true, false], [false, false]] as [boolean, boolean][]) {
+    if (!ordersResult.error) break;
+    ordersResult = await loadOrders(prepared, payments);
+  }
   if (ordersResult.error || proposalsResult.error) {
     return (
       <>
@@ -50,6 +55,8 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
     const { data: signed } = await db.storage.from(BUCKET).createSignedUrls(photoPaths, 3600);
     photoPaths.forEach((path, index) => { if (signed?.[index]?.signedUrl) urlByPath.set(path, signed[index].signedUrl); });
   }
+  const allProductIds = orders.flatMap(order => (order.sourcing_company_order_items ?? []).map((item: any) => item.product_id as string | null));
+  const [photoUrl, { costOf, costReason, rates }] = await Promise.all([photoUrlsFor(db, allProductIds), loadCosts(db, allProductIds)]);
   const newOrders = orders.filter(order => order.status === "new").length;
   const newProposals = proposals.filter(proposal => proposal.status === "new").length;
   const paymentsToConfirm = orders.reduce((sum, order) => sum + (order.sourcing_company_payments ?? []).filter((payment: any) => payment.status === "pending").length, 0);
@@ -89,6 +96,8 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
             const status = STATUS[order.status] ?? STATUS.new;
             const orderPayments: any[] = order.sourcing_company_payments ?? [];
             const summary = paymentSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })), orderPayments);
+            const readyCount = items.filter(item => item.prepared_at).length;
+            const profit = profitSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency, costGel: item.product_id ? costOf.get(item.product_id) : null })), rates);
             const toConfirm = orderPayments.filter(payment => payment.status === "pending").length;
             return (
               <details className="card order-fold" key={order.id} open={order.status === "new"}>
@@ -98,6 +107,8 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
                   <span className="order-fold-end">
                     <strong>{totals.byCurrency.map(item => `${item.currency} ${fmt(item.total)}`).join(" + ") || "—"}</strong>
                     <span className={`badge ${status.badge}`}>{status.label}</span>
+                    {items.length > 0 && <span className={`badge ${readyCount === items.length ? "success" : ""}`}>{readyCount === items.length ? "✓ All ready" : `${readyCount} of ${items.length} ready`}</span>}
+                    {profit.counted > 0 && <span className={`badge ${profit.profit >= 0 ? "success" : "danger"}`} title="Sell price minus landed cost, in GEL">Profit GEL {fmt(profit.profit)}</span>}
                     {summary.map(row => {
                       const tone = balanceTone(row);
                       return <span key={row.currency} className={`balance-pill ${tone}`}>{tone === "paid" ? `✓ ${row.currency} paid` : tone === "over" ? `▲ ${row.currency} ${fmt(Math.abs(row.balance))} over` : `${row.currency} ${fmt(row.balance)} to pay`}</span>;
@@ -106,13 +117,22 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
                   </span>
                 </summary>
                 <div className="table-wrap order-table"><table>
-                  <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Sell price</th><th>Total</th></tr></thead>
+                  <thead><tr><th></th><th>Code</th><th>Product</th><th>Quantity</th><th>Sell price</th><th>Total</th><th>Profit (GEL)</th><th>Ready</th></tr></thead>
                   <tbody>{items.map(item => (
                     <tr key={item.id}>
+                      <td className="thumb-cell">{item.product_id && photoUrl.get(item.product_id)
+                        ? <a href={photoUrl.get(item.product_id)} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={photoUrl.get(item.product_id)} alt={item.product_name} loading="lazy" /></a>
+                        : <div className="order-thumb empty">—</div>}</td>
                       <td className="code-cell">{item.sku ?? "—"}</td><td>{item.product_name}</td>
                       <td>{Number(item.quantity).toLocaleString("en-GB")}</td>
                       <td>{item.unit_price === null ? <span className="muted">no price</span> : `${item.currency} ${fmt(Number(item.unit_price))}`}</td>
                       <td className="num">{item.unit_price === null ? "—" : `${item.currency} ${fmt(Number(item.quantity) * Number(item.unit_price))}`}</td>
+                      <td className="num">{(() => {
+                        const result = lineProfit({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency }, item.product_id ? costOf.get(item.product_id) : null, rates);
+                        return result ? <span title={`Cost GEL ${fmt(result.cost)}`} style={{ color: result.profit < 0 ? "var(--danger, #b42318)" : undefined }}>{fmt(result.profit)}</span>
+                          : <span className="muted small">{item.unit_price === null ? "no sell price" : !item.product_id ? "product removed" : costReason.get(item.product_id) ?? "—"}</span>;
+                      })()}</td>
+                      <td>{item.prepared_at ? <span className="badge success">✓ Ready</span> : <span className="muted">—</span>}</td>
                     </tr>
                   ))}</tbody>
                 </table></div>
