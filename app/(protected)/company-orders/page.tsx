@@ -2,7 +2,8 @@ import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { BUCKET } from "@/lib/supplier-portal";
 import { lineTotals } from "@/lib/company-orders";
-import { setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
+import Link from "next/link";
+import { createCompanyOrderAction, setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,12 @@ const STATUS: Record<string, { label: string; badge: string }> = {
 };
 const when = (value: string) => new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi", dateStyle: "medium", timeStyle: "short" });
 
-export default async function CompanyOrdersPage() {
+export default async function CompanyOrdersPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error: pageError } = await searchParams;
   await requireSourcingAccess();
   const db = adminDb();
-  const [ordersResult, proposalsResult] = await Promise.all([
+  const [companiesResult, ordersResult, proposalsResult] = await Promise.all([
+    db.from("sourcing_companies").select("id,name").order("name"),
     db.from("sourcing_company_orders")
       .select("id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency)")
       .order("created_at", { ascending: false }).limit(200),
@@ -31,6 +34,7 @@ export default async function CompanyOrdersPage() {
       </>
     );
   }
+  const companies: any[] = companiesResult.data ?? [];
   const orders: any[] = ordersResult.data ?? [];
   const proposals: any[] = proposalsResult.data ?? [];
 
@@ -52,6 +56,21 @@ export default async function CompanyOrdersPage() {
           <span className={`badge ${newProposals ? "warning" : ""}`}>{newProposals} new suggestion{newProposals === 1 ? "" : "s"}</span>
         </div>
       </div>
+
+      {pageError && <div className="notice">{pageError}</div>}
+      <details className="card" style={{ marginBottom: 14 }}>
+        <summary>+ New order for a company</summary>
+        <form action={createCompanyOrderAction} className="form-grid" style={{ marginTop: 12 }}>
+          <label>Company *
+            <select name="company_id" required defaultValue="">
+              <option value="" disabled>Select a company</option>
+              {companies.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </label>
+          <label>Note (optional)<input name="note" maxLength={2000} /></label>
+          <div><button className="btn" type="submit">Create and add products</button></div>
+        </form>
+      </details>
 
       <h2>Orders ({orders.length})</h2>
       {orders.length === 0 ? <div className="card empty" style={{ marginBottom: 20 }}>No orders from companies yet.</div> : (
@@ -83,6 +102,7 @@ export default async function CompanyOrdersPage() {
                 </table></div>
                 {order.note && <p className="small"><strong>Company note:</strong> {order.note}</p>}
                 <div className="product-actions" style={{ marginTop: 10 }}>
+                  <Link className="btn secondary sm" href={`/company-orders/${order.id}`}>Edit</Link>
                   {order.status !== "accepted" && <form action={setCompanyOrderStatusById.bind(null, order.id, "accepted")}><button className="btn sm" type="submit">Accept</button></form>}
                   {order.status !== "cancelled" && <form action={setCompanyOrderStatusById.bind(null, order.id, "cancelled")}><button className="btn danger sm" type="submit">Cancel</button></form>}
                   {order.status !== "new" && <form action={setCompanyOrderStatusById.bind(null, order.id, "new")}><button className="btn secondary sm" type="submit">Back to new</button></form>}

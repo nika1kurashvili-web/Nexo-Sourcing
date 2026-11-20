@@ -1,0 +1,118 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { requireSourcingAccess } from "@/lib/auth";
+import { adminDb } from "@/lib/admin-db";
+import { UUID_PATTERN } from "@/lib/catalog-validation";
+import { lineTotals } from "@/lib/company-orders";
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { LineSearch } from "@/components/LineSearch";
+import {
+  addCompanyOrderItemsAction, deleteCompanyOrderById, removeCompanyOrderItemById, saveCompanyOrderAction, setCompanyOrderStatusById
+} from "@/app/company-actions";
+
+export const dynamic = "force-dynamic";
+
+const fmt = (value: number) => value.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const STATUS: Record<string, { label: string; badge: string }> = {
+  new: { label: "New", badge: "warning" }, accepted: { label: "Accepted", badge: "success" }, cancelled: { label: "Cancelled", badge: "danger" }
+};
+
+export default async function EditCompanyOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
+  const { id } = await params;
+  const { error } = await searchParams;
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(id)) notFound();
+  const db = adminDb();
+  const { data: order } = await db.from("sourcing_company_orders")
+    .select("id,company_id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,product_id,sku,product_name,quantity,unit_price,currency,created_at)")
+    .eq("id", id).maybeSingle();
+  if (!order) notFound();
+  const items: any[] = [...(order.sourcing_company_order_items ?? [])].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+
+  const { data: assigned } = await db.from("sourcing_company_products")
+    .select("product_id,sell_price,currency,sourcing_products!inner(id,sku,name,status)")
+    .eq("company_id", order.company_id).eq("sourcing_products.status", "approved").range(0, 999);
+  const inOrder = new Set(items.map(item => item.product_id).filter(Boolean));
+  const addable: any[] = (assigned ?? []).filter((row: any) => !inOrder.has(row.product_id))
+    .sort((a: any, b: any) => String(a.sourcing_products.name).localeCompare(String(b.sourcing_products.name)));
+
+  const totals = lineTotals(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })));
+  const status = STATUS[order.status] ?? STATUS.new;
+
+  return (
+    <>
+      <div className="page-head">
+        <div>
+          <h1>{order.order_no}</h1>
+          <div className="muted">{order.sourcing_companies?.name ?? "Company"} · <Link href="/company-orders">All company orders</Link></div>
+        </div>
+        <div className="badges">
+          <span className={`badge ${status.badge}`}>{status.label}</span>
+          <span className="badge">{items.length} product{items.length === 1 ? "" : "s"} · {totals.totalQuantity.toLocaleString("en-GB")} pcs</span>
+          <span className="badge">{totals.byCurrency.map(item => `${item.currency} ${fmt(item.total)}`).join(" + ") || "No prices"}</span>
+        </div>
+      </div>
+      {error && <div className="notice">{error}</div>}
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="product-actions">
+          {order.status !== "accepted" && <form action={setCompanyOrderStatusById.bind(null, order.id, "accepted")}><button className="btn" type="submit">Accept</button></form>}
+          {order.status !== "cancelled" && <form action={setCompanyOrderStatusById.bind(null, order.id, "cancelled")}><button className="btn danger" type="submit">Cancel</button></form>}
+          {order.status !== "new" && <form action={setCompanyOrderStatusById.bind(null, order.id, "new")}><button className="btn secondary" type="submit">Back to new</button></form>}
+          <form action={deleteCompanyOrderById.bind(null, order.id)}>
+            <ConfirmButton message="Delete this order permanently? The company will no longer see it." className="btn danger">Delete order</ConfirmButton>
+          </form>
+        </div>
+        <p className="small muted" style={{ marginBottom: 0 }}>Everything you change here is what the company sees in "My orders".</p>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h2 style={{ marginTop: 0 }}>Products <span className="muted small" style={{ fontWeight: 500 }}>· {items.length}</span></h2>
+        {items.length === 0 ? <div className="empty">No products yet. Add some below.</div> : (
+          <form action={saveCompanyOrderAction.bind(null, order.id)}>
+            {/* Enter inside a field must save, never remove a line: this is the first (default) submit button. */}
+            <button type="submit" tabIndex={-1} aria-hidden="true" style={{ position: "absolute", left: -9999, width: 1, height: 1, opacity: 0 }}>Save</button>
+            <LineSearch><div className="table-wrap order-table"><table>
+              <thead><tr><th>Code</th><th>Product</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Line total</th><th></th></tr></thead>
+              <tbody>{items.map(item => (
+                <tr key={item.id}>
+                  <td className="code-cell">{item.sku ?? "—"}</td>
+                  <td>{item.product_name}{item.product_id === null && <div className="small muted">removed from catalog</div>}</td>
+                  <td><input type="number" name={`qty_${item.id}`} defaultValue={Number(item.quantity)} min="0.01" step="any" style={{ width: 84 }} /></td>
+                  <td><input type="number" name={`price_${item.id}`} defaultValue={item.unit_price === null ? "" : Number(item.unit_price)} min="0" step="any" style={{ width: 96 }} /></td>
+                  <td><select name={`cur_${item.id}`} defaultValue={item.currency}>{["GEL", "USD", "EUR", "CNY"].map(currency => <option key={currency} value={currency}>{currency}</option>)}</select></td>
+                  <td className="num"><strong>{item.unit_price === null ? <span className="muted">no price</span> : `${item.currency} ${fmt(Number(item.quantity) * Number(item.unit_price))}`}</strong></td>
+                  <td><button className="btn danger sm" type="submit" formAction={removeCompanyOrderItemById.bind(null, order.id, item.id)} title="Remove from order">Remove</button></td>
+                </tr>
+              ))}</tbody>
+            </table></div></LineSearch>
+            <label style={{ marginTop: 12, display: "block" }}>Note
+              <textarea name="note" defaultValue={order.note ?? ""} maxLength={2000} rows={2} />
+            </label>
+            <div style={{ marginTop: 12 }}><button className="btn" type="submit">Save changes</button></div>
+          </form>
+        )}
+      </div>
+
+      <details className="card" open={items.length === 0}>
+        <summary>+ Add products ({addable.length} available for this company)</summary>
+        {addable.length === 0 ? <div className="muted" style={{ marginTop: 10 }}>No more products are marked for this company. Mark products in Products → "Companies &amp; sell price".</div> : (
+          <form action={addCompanyOrderItemsAction.bind(null, order.id)} style={{ marginTop: 12 }}>
+            <LineSearch><div className="table-wrap order-table"><table>
+              <thead><tr><th>Code</th><th>Product</th><th>Sell price</th><th>Quantity</th></tr></thead>
+              <tbody>{addable.map((row: any) => (
+                <tr key={row.product_id}>
+                  <td className="code-cell">{row.sourcing_products.sku ?? "—"}</td>
+                  <td>{row.sourcing_products.name}</td>
+                  <td>{row.sell_price === null ? <span className="muted">no price</span> : `${row.currency} ${fmt(Number(row.sell_price))}`}</td>
+                  <td><input type="number" name={`add_${row.product_id}`} min="0.01" step="any" placeholder="0" style={{ width: 84 }} /></td>
+                </tr>
+              ))}</tbody>
+            </table></div></LineSearch>
+            <div style={{ marginTop: 12 }}><button className="btn" type="submit">Add the typed quantities</button></div>
+          </form>
+        )}
+      </details>
+    </>
+  );
+}

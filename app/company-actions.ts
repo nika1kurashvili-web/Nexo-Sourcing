@@ -96,3 +96,120 @@ export async function setProposalHandledById(proposalId: string, handled: boolea
   await db.from("sourcing_company_proposals").update({ status: handled ? "handled" : "new" }).eq("id", proposalId);
   revalidatePath("/company-orders");
 }
+
+// ---- Nexo creates and edits company orders ---------------------------------------------------
+
+function orderBack(orderId: string, error?: string): never {
+  revalidatePath(`/company-orders/${orderId}`);
+  revalidatePath("/company-orders");
+  redirect(`/company-orders/${orderId}${error ? `?error=${encodeURIComponent(error)}` : ""}`);
+}
+
+function quantityOf(raw: unknown) {
+  const text = String(raw ?? "").trim().replace(",", ".");
+  if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;
+  const number = Number(text);
+  return number > 0 && number <= 9999999 ? number : null;
+}
+
+function priceOf(raw: unknown): number | null | undefined {
+  const text = String(raw ?? "").trim().replace(",", ".");
+  if (text === "") return null;
+  if (!/^\d+(\.\d+)?$/.test(text) || Number(text) > 9999999) return undefined;
+  return Number(text);
+}
+
+export async function createCompanyOrderAction(formData: FormData) {
+  await requireSourcingAccess();
+  const companyId = String(formData.get("company_id") ?? "");
+  const note = String(formData.get("note") ?? "").trim().slice(0, 2000) || null;
+  if (!UUID_PATTERN.test(companyId)) redirect("/company-orders?error=" + encodeURIComponent("Select a company."));
+  const db = adminDb();
+  const { data: company } = await db.from("sourcing_companies").select("id").eq("id", companyId).maybeSingle();
+  if (!company) redirect("/company-orders?error=" + encodeURIComponent("Company not found."));
+  const { data, error } = await db.from("sourcing_company_orders").insert({ company_id: companyId, note }).select("id").single();
+  if (error || !data) redirect("/company-orders?error=" + encodeURIComponent("Unable to create the order. Run the 20261017 migration first."));
+  revalidatePath("/company-orders");
+  redirect(`/company-orders/${data.id}`);
+}
+
+// Saves the note and every line (quantity, price, currency) of an order. Bound: orderId first.
+export async function saveCompanyOrderAction(orderId: string, formData: FormData) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId)) redirect("/company-orders");
+  const db = adminDb();
+  const { data: order } = await db.from("sourcing_company_orders").select("id").eq("id", orderId).maybeSingle();
+  if (!order) redirect("/company-orders");
+  const { data: items, error } = await db.from("sourcing_company_order_items").select("id,quantity,unit_price,currency").eq("order_id", orderId);
+  if (error) orderBack(orderId, "Unable to load the order.");
+  const updates: { id: string; patch: Record<string, unknown> }[] = [];
+  for (const item of items ?? []) {
+    const quantity = quantityOf(formData.get(`qty_${item.id}`));
+    if (quantity === null) orderBack(orderId, "Enter a valid quantity for every product (more than 0).");
+    const price = priceOf(formData.get(`price_${item.id}`));
+    if (price === undefined) orderBack(orderId, "Enter a valid price.");
+    const currencyRaw = String(formData.get(`cur_${item.id}`) ?? item.currency);
+    const currency = CURRENCIES.includes(currencyRaw) ? currencyRaw : item.currency;
+    if (quantity !== Number(item.quantity) || price !== (item.unit_price === null ? null : Number(item.unit_price)) || currency !== item.currency) {
+      updates.push({ id: item.id, patch: { quantity, unit_price: price, currency } });
+    }
+  }
+  for (const update of updates) {
+    const { error: saveError } = await db.from("sourcing_company_order_items").update(update.patch).eq("id", update.id).eq("order_id", orderId);
+    if (saveError) orderBack(orderId, "Some changes could not be saved.");
+  }
+  if (formData.has("note")) {
+    await db.from("sourcing_company_orders").update({ note: String(formData.get("note") ?? "").trim().slice(0, 2000) || null }).eq("id", orderId);
+  }
+  orderBack(orderId);
+}
+
+// Adds products (that Nexo marked for this company) with the quantities typed in the "add" list. Bound: orderId first.
+export async function addCompanyOrderItemsAction(orderId: string, formData: FormData) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId)) redirect("/company-orders");
+  const db = adminDb();
+  const { data: order } = await db.from("sourcing_company_orders").select("id,company_id").eq("id", orderId).maybeSingle();
+  if (!order) redirect("/company-orders");
+  const { data: available, error } = await db.from("sourcing_company_products")
+    .select("product_id,sell_price,currency,sourcing_products!inner(id,sku,name,status)")
+    .eq("company_id", order.company_id).eq("sourcing_products.status", "approved");
+  if (error) orderBack(orderId, "Unable to load the products.");
+  const { data: existing } = await db.from("sourcing_company_order_items").select("product_id").eq("order_id", orderId);
+  const already = new Set<string>((existing ?? []).map((row: any) => row.product_id as string));
+  const rows: Record<string, unknown>[] = [];
+  for (const row of available ?? []) {
+    const raw = String(formData.get(`add_${row.product_id}`) ?? "").trim();
+    if (raw === "") continue;
+    const quantity = quantityOf(raw);
+    if (quantity === null) orderBack(orderId, "Enter a valid quantity (more than 0).");
+    if (already.has(row.product_id)) continue;
+    rows.push({
+      order_id: orderId, product_id: row.product_id, sku: row.sourcing_products.sku ?? null, product_name: row.sourcing_products.name,
+      quantity, unit_price: row.sell_price === null ? null : Number(row.sell_price), currency: row.currency
+    });
+  }
+  if (!rows.length) orderBack(orderId, "Type a quantity next to the products you want to add.");
+  const { error: insertError } = await db.from("sourcing_company_order_items").insert(rows);
+  if (insertError) orderBack(orderId, "Unable to add the products.");
+  orderBack(orderId);
+}
+
+export async function removeCompanyOrderItemById(orderId: string, itemId: string) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId) || !UUID_PATTERN.test(itemId)) redirect("/company-orders");
+  const db = adminDb();
+  const { error } = await db.from("sourcing_company_order_items").delete().eq("id", itemId).eq("order_id", orderId);
+  if (error) orderBack(orderId, "Unable to remove the product.");
+  orderBack(orderId);
+}
+
+export async function deleteCompanyOrderById(orderId: string) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId)) redirect("/company-orders");
+  const db = adminDb();
+  const { error } = await db.from("sourcing_company_orders").delete().eq("id", orderId);
+  if (error) orderBack(orderId, "Unable to delete the order.");
+  revalidatePath("/company-orders");
+  redirect("/company-orders");
+}
