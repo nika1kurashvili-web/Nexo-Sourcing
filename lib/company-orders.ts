@@ -93,3 +93,25 @@ export function paymentSummary(
     balance: round((total.get(currency) ?? 0) - (paid.get(currency) ?? 0))
   }));
 }
+
+// Profit of a company order (staff only): sell price minus the supplier's catalog price.
+// A line counts only when both prices exist and are in the same currency; the rest is reported as "skipped".
+export function lineProfit(line: { quantity: number; unit_price: number | null; currency: string }, cost: { price: number | null; currency: string | null } | undefined) {
+  if (line.unit_price === null || !cost || cost.price === null || cost.currency !== line.currency) return null;
+  const revenue = line.quantity * line.unit_price;
+  const spent = line.quantity * cost.price;
+  return { revenue, cost: spent, profit: revenue - spent };
+}
+
+export function profitSummary(lines: { quantity: number; unit_price: number | null; currency: string; cost?: { price: number | null; currency: string | null } }[]) {
+  const byCurrency = new Map<string, { currency: string; revenue: number; cost: number; profit: number }>();
+  let skipped = 0;
+  for (const line of lines) {
+    const result = lineProfit(line, line.cost);
+    if (!result) { skipped++; continue; }
+    const row = byCurrency.get(line.currency) ?? { currency: line.currency, revenue: 0, cost: 0, profit: 0 };
+    row.revenue += result.revenue; row.cost += result.cost; row.profit += result.profit;
+    byCurrency.set(line.currency, row);
+  }
+  return { byCurrency: Array.from(byCurrency.values()).sort((a, b) => a.currency.localeCompare(b.currency)), skipped };
+}
