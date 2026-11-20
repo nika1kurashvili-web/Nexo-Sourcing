@@ -185,3 +185,21 @@ test("company sell-price columns in the product sheet", () => {
   assert.match(parseCompanyCells(["P1", "Cup", "abc", "", "", ""], found.columns, companies).error ?? "", /Acme Ltd/);
   assert.match(parseCompanyCells(["P1", "Cup", "5", "XYZ", "", ""], found.columns, companies).error ?? "", /currency/);
 });
+
+import { parsePayment, paymentSummary } from "../lib/company-orders.ts";
+test("company payments", () => {
+  assert.deepEqual(parsePayment({ paidOn: "2026-11-20", amount: "150,5", currency: "GEL", method: "cash", note: " x " }),
+    { paidOn: "2026-11-20", amount: 150.5, currency: "GEL", method: "cash", note: "x" });
+  assert.throws(() => parsePayment({ paidOn: "2026-02-31", amount: "1", currency: "GEL", method: "cash" }));
+  assert.throws(() => parsePayment({ paidOn: "2026-11-20", amount: "0", currency: "GEL", method: "cash" }));
+  assert.throws(() => parsePayment({ paidOn: "2026-11-20", amount: "5", currency: "AAA", method: "cash" }));
+  assert.throws(() => parsePayment({ paidOn: "2026-11-20", amount: "5", currency: "GEL", method: "bitcoin" }));
+  const summary = paymentSummary(
+    [{ quantity: 2, unit_price: 100, currency: "GEL" }, { quantity: 1, unit_price: 50, currency: "USD" }, { quantity: 3, unit_price: null, currency: "GEL" }],
+    [{ amount: 80, currency: "GEL", status: "confirmed" }, { amount: 20, currency: "GEL", status: "pending" }, { amount: 60, currency: "USD", status: "confirmed" }]
+  );
+  assert.deepEqual(summary, [
+    { currency: "GEL", total: 200, paid: 80, pending: 20, balance: 120 },
+    { currency: "USD", total: 50, paid: 60, pending: 0, balance: -10 }
+  ]);
+});

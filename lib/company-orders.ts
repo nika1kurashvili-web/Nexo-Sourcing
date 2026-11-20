@@ -45,3 +45,51 @@ export function lineTotals(lines: { quantity: number; unit_price: number | null;
     totalQuantity: Math.round(totalQuantity * 100) / 100
   };
 }
+
+// ---- Payments ---------------------------------------------------------------------------------
+
+export const PAYMENT_METHODS: { value: string; label: string }[] = [
+  { value: "transfer", label: "Bank transfer" }, { value: "cash", label: "Cash" }, { value: "card", label: "Card" }, { value: "other", label: "Other" }
+];
+export const PAYMENT_CURRENCIES = ["GEL", "USD", "EUR", "CNY"];
+export const paymentMethodLabel = (value: string) => PAYMENT_METHODS.find(method => method.value === value)?.label ?? value;
+
+function realDate(text: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
+// Validates a payment typed by a person. Throws an Error with a message that is safe to show.
+export function parsePayment(input: { paidOn?: unknown; amount?: unknown; currency?: unknown; method?: unknown; note?: unknown }) {
+  const paidOn = String(input.paidOn ?? "").trim();
+  if (!realDate(paidOn)) throw new Error("Enter a valid payment date.");
+  const amountText = String(input.amount ?? "").trim().replace(",", ".");
+  const amount = /^\d+(\.\d{1,2})?$/.test(amountText) ? Number(amountText) : NaN;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 999999999) throw new Error("Enter a valid amount.");
+  const currency = String(input.currency ?? "");
+  if (!PAYMENT_CURRENCIES.includes(currency)) throw new Error("Select a currency.");
+  const method = String(input.method ?? "");
+  if (!PAYMENT_METHODS.some(item => item.value === method)) throw new Error("Select how it was paid.");
+  const note = String(input.note ?? "").trim().slice(0, 1000) || null;
+  return { paidOn, amount, currency, method, note };
+}
+
+// Per currency: what the order costs, what was paid (confirmed only), what still waits for Nexo's confirmation, and the balance.
+export function paymentSummary(
+  lines: { quantity: number; unit_price: number | null; currency: string }[],
+  payments: { amount: number | string; currency: string; status: string }[]
+) {
+  const total = new Map<string, number>();
+  const paid = new Map<string, number>();
+  const pending = new Map<string, number>();
+  const add = (map: Map<string, number>, currency: string, value: number) => map.set(currency, (map.get(currency) ?? 0) + value);
+  for (const line of lines) if (line.unit_price !== null && line.unit_price !== undefined) add(total, line.currency, Number(line.quantity) * Number(line.unit_price));
+  for (const payment of payments) add(payment.status === "confirmed" ? paid : pending, payment.currency, Number(payment.amount));
+  const currencies = Array.from(new Set([...total.keys(), ...paid.keys(), ...pending.keys()])).sort();
+  const round = (value: number) => Math.round(value * 100) / 100;
+  return currencies.map(currency => ({
+    currency, total: round(total.get(currency) ?? 0), paid: round(paid.get(currency) ?? 0), pending: round(pending.get(currency) ?? 0),
+    balance: round((total.get(currency) ?? 0) - (paid.get(currency) ?? 0))
+  }));
+}

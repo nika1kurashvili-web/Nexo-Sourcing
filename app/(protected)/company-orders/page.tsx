@@ -1,7 +1,8 @@
 import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { BUCKET } from "@/lib/supplier-portal";
-import { lineTotals } from "@/lib/company-orders";
+import { lineTotals, paymentSummary } from "@/lib/company-orders";
+import { balanceTone } from "@/lib/orders";
 import Link from "next/link";
 import { createCompanyOrderAction, setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
 
@@ -17,15 +18,20 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
   const { error: pageError } = await searchParams;
   await requireSourcingAccess();
   const db = adminDb();
-  const [companiesResult, ordersResult, proposalsResult] = await Promise.all([
+  const orderBase = "id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency)";
+  const [companiesResult, firstOrdersResult, proposalsResult] = await Promise.all([
     db.from("sourcing_companies").select("id,name").order("name"),
     db.from("sourcing_company_orders")
-      .select("id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency)")
+      .select("id,order_no,status,note,created_at,sourcing_companies(name),sourcing_company_order_items(id,sku,product_name,quantity,unit_price,currency),sourcing_company_payments(amount,currency,status)")
       .order("created_at", { ascending: false }).limit(200),
     db.from("sourcing_company_proposals")
       .select("id,name,description,link,quantity,status,created_at,sourcing_companies(name),sourcing_company_proposal_images(id,object_path)")
       .order("created_at", { ascending: false }).limit(200)
   ]);
+  // Until the payments migration has been run, the orders still load (just without payments).
+  const ordersResult = firstOrdersResult.error
+    ? await db.from("sourcing_company_orders").select(orderBase).order("created_at", { ascending: false }).limit(200)
+    : firstOrdersResult;
   if (ordersResult.error || proposalsResult.error) {
     return (
       <>
@@ -46,6 +52,7 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
   }
   const newOrders = orders.filter(order => order.status === "new").length;
   const newProposals = proposals.filter(proposal => proposal.status === "new").length;
+  const paymentsToConfirm = orders.reduce((sum, order) => sum + (order.sourcing_company_payments ?? []).filter((payment: any) => payment.status === "pending").length, 0);
 
   return (
     <>
@@ -54,6 +61,7 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
         <div className="badges">
           <span className={`badge ${newOrders ? "warning" : ""}`}>{newOrders} new order{newOrders === 1 ? "" : "s"}</span>
           <span className={`badge ${newProposals ? "warning" : ""}`}>{newProposals} new suggestion{newProposals === 1 ? "" : "s"}</span>
+          <span className={`badge ${paymentsToConfirm ? "warning" : ""}`}>{paymentsToConfirm} payment{paymentsToConfirm === 1 ? "" : "s"} to confirm</span>
         </div>
       </div>
 
@@ -79,6 +87,9 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
             const items: any[] = order.sourcing_company_order_items ?? [];
             const totals = lineTotals(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })));
             const status = STATUS[order.status] ?? STATUS.new;
+            const orderPayments: any[] = order.sourcing_company_payments ?? [];
+            const summary = paymentSummary(items.map(item => ({ quantity: Number(item.quantity), unit_price: item.unit_price === null ? null : Number(item.unit_price), currency: item.currency })), orderPayments);
+            const toConfirm = orderPayments.filter(payment => payment.status === "pending").length;
             return (
               <details className="card order-fold" key={order.id} open={order.status === "new"}>
                 <summary className="order-fold-head">
@@ -87,6 +98,11 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
                   <span className="order-fold-end">
                     <strong>{totals.byCurrency.map(item => `${item.currency} ${fmt(item.total)}`).join(" + ") || "—"}</strong>
                     <span className={`badge ${status.badge}`}>{status.label}</span>
+                    {summary.map(row => {
+                      const tone = balanceTone(row);
+                      return <span key={row.currency} className={`balance-pill ${tone}`}>{tone === "paid" ? `✓ ${row.currency} paid` : tone === "over" ? `▲ ${row.currency} ${fmt(Math.abs(row.balance))} over` : `${row.currency} ${fmt(row.balance)} to pay`}</span>;
+                    })}
+                    {toConfirm > 0 && <span className="badge warning">{toConfirm} payment{toConfirm === 1 ? "" : "s"} to confirm</span>}
                   </span>
                 </summary>
                 <div className="table-wrap order-table"><table>

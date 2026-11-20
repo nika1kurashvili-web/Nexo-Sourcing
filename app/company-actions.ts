@@ -7,6 +7,7 @@ import { requireSourcingAccess } from "@/lib/auth";
 import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import { companyLinkUrl, encryptShareToken } from "@/lib/share-link-crypto";
+import { parsePayment } from "@/lib/company-orders";
 
 // Every action runs requireSourcingAccess() first (staff only) and uses the server-only service client.
 
@@ -212,4 +213,49 @@ export async function deleteCompanyOrderById(orderId: string) {
   if (error) orderBack(orderId, "Unable to delete the order.");
   revalidatePath("/company-orders");
   redirect("/company-orders");
+}
+
+// ---- Payments of company orders ----------------------------------------------------------------
+
+// Nexo records a payment: it is confirmed right away. Bound: orderId first.
+export async function addCompanyPaymentAction(orderId: string, formData: FormData) {
+  const { user } = await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId)) redirect("/company-orders");
+  let payment;
+  try {
+    payment = parsePayment({
+      paidOn: formData.get("paid_on"), amount: formData.get("amount"), currency: formData.get("currency"), method: formData.get("method"), note: formData.get("note")
+    });
+  } catch (error) { orderBack(orderId, error instanceof Error ? error.message : "Invalid payment."); }
+  const db = adminDb();
+  const { data: order } = await db.from("sourcing_company_orders").select("id").eq("id", orderId).maybeSingle();
+  if (!order) redirect("/company-orders");
+  const now = new Date().toISOString();
+  const { error } = await db.from("sourcing_company_payments").insert({
+    order_id: orderId, paid_on: payment.paidOn, amount: payment.amount, currency: payment.currency, method: payment.method, note: payment.note,
+    status: "confirmed", entered_by: "staff", created_by: user.id, confirmed_at: now
+  });
+  if (error) orderBack(orderId, "Unable to record the payment. Run supabase/migrations/20261018_company_payments.sql first.");
+  orderBack(orderId);
+}
+
+// Confirms a payment the company recorded; only confirmed payments reduce the balance.
+export async function confirmCompanyPaymentById(orderId: string, paymentId: string) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId) || !UUID_PATTERN.test(paymentId)) redirect("/company-orders");
+  const db = adminDb();
+  const { error } = await db.from("sourcing_company_payments").update({ status: "confirmed", confirmed_at: new Date().toISOString() })
+    .eq("id", paymentId).eq("order_id", orderId);
+  if (error) orderBack(orderId, "Unable to confirm the payment.");
+  orderBack(orderId);
+}
+
+// Rejects a pending payment or deletes a recorded one.
+export async function deleteCompanyPaymentById(orderId: string, paymentId: string) {
+  await requireSourcingAccess();
+  if (!UUID_PATTERN.test(orderId) || !UUID_PATTERN.test(paymentId)) redirect("/company-orders");
+  const db = adminDb();
+  const { error } = await db.from("sourcing_company_payments").delete().eq("id", paymentId).eq("order_id", orderId);
+  if (error) orderBack(orderId, "Unable to delete the payment.");
+  orderBack(orderId);
 }
