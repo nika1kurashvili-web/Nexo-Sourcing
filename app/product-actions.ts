@@ -2,6 +2,7 @@
 
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireSourcingAccess } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_PRODUCT_IMAGES, UUID_PATTERN, parseProductFields } from "@/lib/catalog-validation";
@@ -52,6 +53,24 @@ export async function saveProductAction(input: { id?: string; supplierId?: strin
   } catch (error) {
     return { error: message(error, "Unable to save the product.") };
   }
+}
+
+// Staff-only: moves a product (and its photos) to another supplier.
+export async function moveProductSupplierAction(productId: string, formData: FormData) {
+  await requireSourcingAccess();
+  const supplierId = String(formData.get("supplier_id") ?? "");
+  if (!UUID_PATTERN.test(productId) || !UUID_PATTERN.test(supplierId)) redirect("/products");
+  const db = adminDb();
+  const { data: product } = await db.from("sourcing_products").select("id,sku,supplier_id").eq("id", productId).maybeSingle();
+  if (!product) redirect("/products");
+  if (product.supplier_id === supplierId) { revalidatePath("/products"); return; }
+  const { data: clash } = await db.from("sourcing_products").select("id").eq("supplier_id", supplierId).ilike("sku", String(product.sku).replace(/[%_\\]/g, m => "\\" + m)).limit(1);
+  if (clash?.length) redirect("/products?company_error=" + encodeURIComponent(`That supplier already has a product with code ${product.sku}.`));
+  const { error } = await db.from("sourcing_products").update({ supplier_id: supplierId, updated_at: new Date().toISOString() }).eq("id", productId);
+  if (error) redirect("/products?company_error=" + encodeURIComponent("Unable to change the supplier."));
+  await db.from("sourcing_product_images").update({ supplier_id: supplierId }).eq("product_id", productId);
+  await db.from("sourcing_product_changes").update({ supplier_id: supplierId }).eq("product_id", productId);
+  revalidatePath("/products");
 }
 
 export async function deleteProductAction(formData: FormData) {

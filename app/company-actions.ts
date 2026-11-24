@@ -1,6 +1,6 @@
 "use server";
 
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireSourcingAccess } from "@/lib/auth";
@@ -8,6 +8,7 @@ import { adminDb } from "@/lib/admin-db";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import { companyLinkUrl, encryptShareToken } from "@/lib/share-link-crypto";
 import { parsePayment } from "@/lib/company-orders";
+import { BUCKET } from "@/lib/supplier-portal";
 
 // Every action runs requireSourcingAccess() first (staff only) and uses the server-only service client.
 
@@ -96,6 +97,78 @@ export async function setProposalHandledById(proposalId: string, handled: boolea
   const db = adminDb();
   await db.from("sourcing_company_proposals").update({ status: handled ? "handled" : "new" }).eq("id", proposalId);
   revalidatePath("/company-orders");
+}
+
+// ---- Nexo approves a company's product suggestion: it becomes a normal product in Products -----------------
+
+const UNASSIGNED_SUPPLIER = "Unassigned (from companies)";
+
+function proposalFail(message: string): never {
+  redirect("/company-orders?error=" + encodeURIComponent(message));
+}
+
+export async function approveProposalAction(proposalId: string, formData: FormData) {
+  const { user } = await requireSourcingAccess();
+  if (!UUID_PATTERN.test(proposalId)) redirect("/company-orders");
+  const db = adminDb();
+  const { data: proposal, error } = await db.from("sourcing_company_proposals")
+    .select("id,company_id,name,description,link,quantity,product_id,sourcing_companies(name),sourcing_company_proposal_images(id,object_path,mime_type)")
+    .eq("id", proposalId).maybeSingle();
+  if (error) proposalFail("Unable to approve. Run supabase/migrations/20261020_proposal_product.sql in the Supabase SQL Editor first.");
+  if (!proposal) proposalFail("Suggestion not found.");
+  if (proposal.product_id) proposalFail("This suggestion is already in Products.");
+
+  // The supplier is optional: without one the product goes to a placeholder supplier that can be changed later in Products.
+  let supplierId = String(formData.get("supplier_id") ?? "").trim();
+  if (supplierId) {
+    if (!UUID_PATTERN.test(supplierId)) proposalFail("Choose a valid supplier.");
+    const { data: supplier } = await db.from("sourcing_suppliers").select("id").eq("id", supplierId).maybeSingle();
+    if (!supplier) proposalFail("Supplier not found.");
+  } else {
+    const found = await db.from("sourcing_suppliers").select("id").eq("name", UNASSIGNED_SUPPLIER).limit(1).maybeSingle();
+    if (found.data) supplierId = found.data.id as string;
+    else {
+      const created = await db.from("sourcing_suppliers").insert({ name: UNASSIGNED_SUPPLIER, notes: "Placeholder for products approved from company suggestions. Change the supplier in Products." }).select("id").single();
+      if (created.error || !created.data) proposalFail("Unable to create the placeholder supplier. Choose a supplier instead.");
+      supplierId = created.data.id as string;
+    }
+  }
+
+  const companyName = proposal.sourcing_companies?.name ?? "a company";
+  const note = [`Suggested by ${companyName}`, proposal.link ? `Link: ${proposal.link}` : null, proposal.quantity ? `Wanted: ${Number(proposal.quantity)} pcs` : null].filter(Boolean).join("\n");
+  const now = new Date().toISOString();
+  const inserted = await db.from("sourcing_products").insert({
+    supplier_id: supplierId, name: proposal.name, description: proposal.description ?? null, internal_note: note,
+    status: "approved", created_by_supplier: false, created_by: user.id, approved_by: user.id, approved_at: now
+  }).select("id,sku").single();
+  if (inserted.error || !inserted.data) proposalFail("Unable to create the product.");
+  const productId = inserted.data.id as string;
+
+  // Copy the company's photos into the product's photos (best effort: the product exists either way).
+  let failedPhotos = 0;
+  for (const image of proposal.sourcing_company_proposal_images ?? []) {
+    const imageId = randomUUID();
+    const path = `catalog/${supplierId}/${productId}/${imageId}`;
+    const download = await db.storage.from(BUCKET).download(image.object_path);
+    if (download.error || !download.data) { failedPhotos++; continue; }
+    const bytes = new Uint8Array(await download.data.arrayBuffer());
+    if (!bytes.byteLength) { failedPhotos++; continue; }
+    const upload = await db.storage.from(BUCKET).upload(path, bytes, { contentType: image.mime_type, upsert: false });
+    if (upload.error) { failedPhotos++; continue; }
+    const row = await db.from("sourcing_product_images").insert({
+      id: imageId, product_id: productId, supplier_id: supplierId, object_path: path, mime_type: image.mime_type,
+      byte_size: bytes.byteLength, ready: true, approved: true, uploaded_by_supplier: false
+    });
+    if (row.error) { await db.storage.from(BUCKET).remove([path]); failedPhotos++; }
+  }
+
+  // The company that suggested it can see it right away (sell price to be set in Products → Companies & sell price).
+  await db.from("sourcing_company_products").upsert({ product_id: productId, company_id: proposal.company_id, sell_price: null, currency: "GEL" }, { onConflict: "product_id,company_id" });
+  await db.from("sourcing_company_proposals").update({ status: "handled", product_id: productId }).eq("id", proposalId);
+  revalidatePath("/company-orders");
+  revalidatePath("/products");
+  const sku = inserted.data.sku ?? "";
+  redirect("/company-orders?ok=" + encodeURIComponent(`Added to Products as ${sku}.${failedPhotos ? ` ${failedPhotos} photo${failedPhotos === 1 ? "" : "s"} could not be copied.` : ""} Set the supplier, price and sell price in Products.`));
 }
 
 // ---- Nexo creates and edits company orders ---------------------------------------------------

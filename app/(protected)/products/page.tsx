@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { BUCKET } from "@/lib/supplier-portal";
 import { UUID_PATTERN } from "@/lib/catalog-validation";
 import { decryptShareToken, catalogLinkUrl } from "@/lib/share-link-crypto";
-import { decideSubmissionAction, deleteProductAction, deleteProductImageAction } from "@/app/product-actions";
+import { decideSubmissionAction, deleteProductAction, deleteProductImageAction, moveProductSupplierAction } from "@/app/product-actions";
 import { ProductEditor } from "@/components/ProductEditor";
 import { CatalogLinkControls } from "@/components/CatalogLinkControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -368,6 +368,15 @@ export default async function ProductsPage({ searchParams }: {
                   <details style={{ width: "100%" }}>
                     <summary className="btn secondary" style={{ display: "inline-flex" }}>Edit</summary>
                     <div style={{ marginTop: 12 }}><ProductEditor mode="edit" product={product} photoCount={productImages.length} /></div>
+                  </details>
+                  <details style={{ width: "100%" }}>
+                    <summary className="btn secondary" style={{ display: "inline-flex" }}>Supplier</summary>
+                    <form action={moveProductSupplierAction.bind(null, product.id)} className="product-actions" style={{ marginTop: 12 }}>
+                      <select name="supplier_id" defaultValue={product.supplier_id}>
+                        {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                      </select>
+                      <button className="btn sm" type="submit">Change supplier</button>
+                    </form>
                   </details>
                   <form action={deleteProductAction}>
                     <input type="hidden" name="id" value={product.id} />

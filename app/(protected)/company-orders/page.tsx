@@ -5,7 +5,7 @@ import { lineProfit, lineTotals, paymentSummary, profitSummary } from "@/lib/com
 import { loadCosts, photoUrlsFor } from "@/lib/company-order-data";
 import { balanceTone } from "@/lib/orders";
 import Link from "next/link";
-import { createCompanyOrderAction, setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
+import { approveProposalAction, createCompanyOrderAction, setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,8 @@ const STATUS: Record<string, { label: string; badge: string }> = {
 };
 const when = (value: string) => new Date(value).toLocaleString("en-GB", { timeZone: "Asia/Tbilisi", dateStyle: "medium", timeStyle: "short" });
 
-export default async function CompanyOrdersPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  const { error: pageError } = await searchParams;
+export default async function CompanyOrdersPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
+  const { error: pageError, ok: pageOk } = await searchParams;
   await requireSourcingAccess();
   const db = adminDb();
   const itemColumns = (prepared: boolean) => `sourcing_company_order_items(id,sku,product_id,product_name,quantity,unit_price,currency${prepared ? ",prepared_at" : ""})`;
@@ -24,13 +24,18 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
     `id,order_no,status,note,created_at,sourcing_companies(name),${itemColumns(prepared)}${payments ? ",sourcing_company_payments(amount,currency,status)" : ""}`;
   const loadOrders = (prepared: boolean, payments: boolean) => db.from("sourcing_company_orders").select(orderColumns(prepared, payments))
     .order("created_at", { ascending: false }).limit(200);
-  const [companiesResult, firstOrdersResult, proposalsResult] = await Promise.all([
+  const loadProposals = (withProduct: boolean) => db.from("sourcing_company_proposals")
+    .select(`id,name,description,link,quantity,status,created_at,${withProduct ? "product_id,sourcing_products(sku)," : ""}sourcing_companies(name),sourcing_company_proposal_images(id,object_path)`)
+    .order("created_at", { ascending: false }).limit(200);
+  const [companiesResult, firstOrdersResult, firstProposalsResult, suppliersResult] = await Promise.all([
     db.from("sourcing_companies").select("id,name").order("name"),
     loadOrders(true, true),
-    db.from("sourcing_company_proposals")
-      .select("id,name,description,link,quantity,status,created_at,sourcing_companies(name),sourcing_company_proposal_images(id,object_path)")
-      .order("created_at", { ascending: false }).limit(200)
+    loadProposals(true),
+    db.from("sourcing_suppliers").select("id,name").order("name")
   ]);
+  // Until the proposal-product migration has been run, the suggestions still load (just without the product link).
+  const proposalsResult: any = firstProposalsResult.error ? await loadProposals(false) : firstProposalsResult;
+  const suppliers: any[] = suppliersResult.data ?? [];
   // Until the payments / ready-mark migrations have been run, the orders still load (just without those parts).
   let ordersResult: any = firstOrdersResult;
   for (const [prepared, payments] of [[false, true], [true, false], [false, false]] as [boolean, boolean][]) {
@@ -73,6 +78,7 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
       </div>
 
       {pageError && <div className="notice">{pageError}</div>}
+      {pageOk && <div className="notice success">{pageOk}</div>}
       <details className="card" style={{ marginBottom: 14 }}>
         <summary>+ New order for a company</summary>
         <form action={createCompanyOrderAction} className="form-grid" style={{ marginTop: 12 }}>
@@ -181,6 +187,20 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
                 {proposal.link && <p className="small"><a href={proposal.link} target="_blank" rel="noopener noreferrer nofollow">{proposal.link}</a></p>}
                 {photos.length > 0 && <div className="badges">{photos.map(photo => urlByPath.get(photo.object_path)
                   ? <a key={photo.id} href={urlByPath.get(photo.object_path)} target="_blank" rel="noopener noreferrer"><img className="order-thumb" src={urlByPath.get(photo.object_path)} alt={proposal.name} /></a> : null)}</div>}
+                {proposal.product_id ? (
+                  <p className="small" style={{ marginTop: 10 }}>
+                    <span className="badge success">✓ In Products</span>{" "}
+                    <Link href={`/products?q=${encodeURIComponent(proposal.sourcing_products?.sku ?? "")}`}>{proposal.sourcing_products?.sku ?? "Open Products"}</Link>
+                  </p>
+                ) : (
+                  <form action={approveProposalAction.bind(null, proposal.id)} className="product-actions" style={{ marginTop: 10 }}>
+                    <select name="supplier_id" defaultValue="" aria-label="Supplier">
+                      <option value="">No supplier (choose later)</option>
+                      {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
+                    </select>
+                    <button className="btn sm" type="submit">Approve → add to Products</button>
+                  </form>
+                )}
                 <div className="product-actions" style={{ marginTop: 10 }}>
                   <form action={setProposalHandledById.bind(null, proposal.id, proposal.status !== "handled")}>
                     <button className="btn secondary sm" type="submit">{proposal.status === "handled" ? "Mark as new" : "Mark as handled"}</button>
