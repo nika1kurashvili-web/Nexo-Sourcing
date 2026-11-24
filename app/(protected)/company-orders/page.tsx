@@ -5,6 +5,7 @@ import { lineProfit, lineTotals, paymentSummary, profitSummary } from "@/lib/com
 import { loadCosts, photoUrlsFor } from "@/lib/company-order-data";
 import { balanceTone } from "@/lib/orders";
 import Link from "next/link";
+import { PendingButton } from "@/components/PendingButton";
 import { approveProposalAction, createCompanyOrderAction, setCompanyOrderStatusById, setProposalHandledById } from "@/app/company-actions";
 
 export const dynamic = "force-dynamic";
@@ -198,7 +199,7 @@ export default async function CompanyOrdersPage({ searchParams }: { searchParams
                       <option value="">No supplier (choose later)</option>
                       {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
                     </select>
-                    <button className="btn sm" type="submit">Approve → add to Products</button>
+                    <PendingButton className="btn sm" pendingText="Adding… (copying photos)">Approve → add to Products</PendingButton>
                   </form>
                 )}
                 <div className="product-actions" style={{ marginTop: 10 }}>
