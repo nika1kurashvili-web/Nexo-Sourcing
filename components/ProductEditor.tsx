@@ -10,12 +10,13 @@ import { ProductFieldInputs } from "@/components/ProductFieldInputs";
 import { shrinkAll } from "@/lib/image-resize";
 
 // Nexo staff form: create a product for any supplier, or edit an existing one, with photos.
-export function ProductEditor({ mode, suppliers = [], product, photoCount = 0, defaultSupplierId = "" }: {
+export function ProductEditor({ mode, suppliers = [], product, photoCount = 0, defaultSupplierId = "", onSaved }: {
   mode: "create" | "edit";
   suppliers?: { id: string; name: string }[];
   product?: Record<string, any>;
   photoCount?: number;
   defaultSupplierId?: string;
+  onSaved?: () => void; // called after a successful save (the edit window uses it to close itself)
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -60,7 +61,8 @@ export function ProductEditor({ mode, suppliers = [], product, photoCount = 0, d
       if (!failedUploads) {
         // Fold the form away and bring the card back into view, so the page does not stay scrolled down.
         const details = form.closest("details");
-        window.setTimeout(() => {
+        if (onSaved) window.setTimeout(onSaved, 700);
+        else window.setTimeout(() => {
           if (details) details.open = false;
           (details?.closest(".product-card") ?? details)?.scrollIntoView({ block: "center", behavior: "smooth" });
         }, 700);

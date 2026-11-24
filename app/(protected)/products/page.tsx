@@ -7,6 +7,7 @@ import { UUID_PATTERN } from "@/lib/catalog-validation";
 import { decryptShareToken, catalogLinkUrl } from "@/lib/share-link-crypto";
 import { decideSubmissionAction, deleteProductAction, deleteProductImageAction, moveProductSupplierAction } from "@/app/product-actions";
 import { ProductEditor } from "@/components/ProductEditor";
+import { ProductEditModal } from "@/components/ProductEditModal";
 import { CatalogLinkControls } from "@/components/CatalogLinkControls";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { saveCostSettingsAction } from "@/app/cost-actions";
@@ -110,7 +111,7 @@ function DecisionForms({ kind, id, approveLabel, rejectLabel }: { kind: "product
 }
 
 export default async function ProductsPage({ searchParams }: {
-  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string; cost_error?: string; company_error?: string }>;
+  searchParams: Promise<{ supplier?: string; status?: string; q?: string; page?: string; company?: string; cost_error?: string; company_error?: string }>;
 }) {
   const params = await searchParams;
   await requireSourcingAccess();
@@ -127,14 +128,17 @@ export default async function ProductsPage({ searchParams }: {
   const db: any = createAdminClient();
   const settingsPromise = db.from("sourcing_settings").select("key,value");
   const supplierFilter = params.supplier && UUID_PATTERN.test(params.supplier) ? params.supplier : "";
+  const companyFilter = params.company && UUID_PATTERN.test(params.company) ? params.company : "";
   const statusFilter = params.status === "approved" || params.status === "pending" ? params.status : "";
   const search = (params.q ?? "").replace(/[%_,()*\\]/g, " ").trim().slice(0, 80);
 
   const page = Math.max(1, Math.min(1000, parseInt(params.page ?? "1", 10) || 1));
-  let productQuery = db.from("sourcing_products").select("*, sourcing_suppliers(name)", { count: "exact" })
+  // With a company filter the products are joined to the companies they are marked for (inner join: only matches are kept).
+  let productQuery = db.from("sourcing_products").select(companyFilter ? "*, sourcing_suppliers(name), sourcing_company_products!inner(company_id)" : "*, sourcing_suppliers(name)", { count: "exact" })
     .order("created_at", { ascending: false }).range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
   if (supplierFilter) productQuery = productQuery.eq("supplier_id", supplierFilter);
   if (statusFilter) productQuery = productQuery.eq("status", statusFilter);
+  if (companyFilter) productQuery = productQuery.eq("sourcing_company_products.company_id", companyFilter);
   if (search) productQuery = productQuery.or(`name.ilike.%${search}%,sku.ilike.%${search}%`);
 
   // Approvals are always loaded in full (not filtered or paged) so nothing can hide from you.
@@ -208,6 +212,7 @@ export default async function ProductsPage({ searchParams }: {
     const query = new URLSearchParams();
     if (supplierFilter) query.set("supplier", supplierFilter);
     if (statusFilter) query.set("status", statusFilter);
+    if (companyFilter) query.set("company", companyFilter);
     if (search) query.set("q", params.q ?? "");
     if (target > 1) query.set("page", String(target));
     const text = query.toString();
@@ -229,6 +234,14 @@ export default async function ProductsPage({ searchParams }: {
             {suppliers.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.name}</option>)}
           </select>
         </label>
+        {companyPortalReady && companyList.length > 0 && (
+          <label>Company
+            <select name="company" defaultValue={companyFilter}>
+              <option value="">All companies</option>
+              {companyList.map(company => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </label>
+        )}
         <label>Status
           <select name="status" defaultValue={statusFilter}>
             <option value="">All</option><option value="approved">Approved</option><option value="pending">Waiting for approval</option>
@@ -365,10 +378,7 @@ export default async function ProductsPage({ searchParams }: {
                       <div style={{ marginTop: 12 }}><ProductCompanies productId={product.id} companies={companyList} assigned={assignedByProduct.get(product.id) ?? []} /></div>
                     </details>
                   )}
-                  <details style={{ width: "100%" }}>
-                    <summary className="btn secondary" style={{ display: "inline-flex" }}>Edit</summary>
-                    <div style={{ marginTop: 12 }}><ProductEditor mode="edit" product={product} photoCount={productImages.length} /></div>
-                  </details>
+                  <ProductEditModal product={product} photoCount={productImages.length} />
                   <details style={{ width: "100%" }}>
                     <summary className="btn secondary" style={{ display: "inline-flex" }}>Supplier</summary>
                     <form action={moveProductSupplierAction.bind(null, product.id)} className="product-actions" style={{ marginTop: 12 }}>
